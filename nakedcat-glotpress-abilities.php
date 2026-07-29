@@ -3,7 +3,7 @@
  * Plugin Name:          GlotPress Abilities
  * Plugin URI:           https://nakedcatplugins.com/product/glotpress-abilities/
  * Description:          Exposes GlotPress translation project data to AI agents and MCP clients via the WordPress Abilities API.
- * Version:              1.0
+ * Version:              0.1
  * Author:               Naked Cat Plugins (by Webdados)
  * Author URI:           https://nakedcatplugins.com
  * Text Domain:          nakedcat-glotpress-abilities
