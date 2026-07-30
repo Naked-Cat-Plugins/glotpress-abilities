@@ -1,10 +1,6 @@
-#### 0.4 - 2026-07-30
-
-* [NEW] `nakedcat-glotpress/import-originals` ability — import a project's originals (source strings) from a .pot/.po file's contents, reusing GlotPress's own import/diff/fuzzy-match/obsolete machinery; intended for release automation (e.g. a GitHub Actions workflow updating originals whenever a version is tagged)
-
-
 #### 0.3 - 2026-07-30
 
+* [NEW] `nakedcat-glotpress/import-originals` ability — import a project's originals (source strings) from a .pot/.po file's contents, reusing GlotPress's own import/diff/fuzzy-match/obsolete machinery; intended for release automation (e.g. a GitHub Actions workflow updating originals whenever a version is tagged)
 * [NEW] `nakedcat-glotpress/update-translations` now automatically mirrors successful "pt" translation writes to a project's "pt-ao" (Portuguese, Angola) translation set, if one exists, always overwriting whatever is currently there; each result item's new `pt_ao_mirror` field reports the mirror outcome
 
 
