@@ -140,7 +140,7 @@ claude mcp list          # should show glotpress-mcp as ✔ Connected
 ```
 
 Then, in a Claude Code session connected to this MCP server, ask it to discover abilities (it
-will call the `mcp-adapter-discover-abilities` tool) and confirm the five `nakedcat-glotpress/*`
+will call the `mcp-adapter-discover-abilities` tool) and confirm the six `nakedcat-glotpress/*`
 abilities listed above appear.
 
 ## Abilities
@@ -152,10 +152,12 @@ abilities listed above appear.
 | [`nakedcat-glotpress/get-strings`](#nakedcat-glotpressget-strings) | read | Strings (originals + their translation) for a project/locale, filtered by status |
 | [`nakedcat-glotpress/update-translations`](#nakedcat-glotpressupdate-translations) | write | Create/update translations for a project/locale, in batch |
 | [`nakedcat-glotpress/find-translations-in-other-projects`](#nakedcat-glotpressfind-translations-in-other-projects) | read | Cross-project translation-memory lookup for terminology consistency |
+| [`nakedcat-glotpress/add-glossary-entries`](#nakedcat-glotpressadd-glossary-entries) | write | Add terms to a locale's global glossary, in batch |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
-references) → `update-translations` (submit the results).
+references) → `update-translations` (submit the results) → optionally `add-glossary-entries` for
+any new terminology worth capturing for next time.
 
 ---
 
@@ -378,3 +380,47 @@ Each `matches` item:
 | `project_path` | string | The other project's path. |
 | `project_name` | string | The other project's name. |
 | `translation` | array of string\|null | The accepted translation's plural forms, trimmed to the locale's actual plural count. |
+
+---
+
+### `nakedcat-glotpress/add-glossary-entries`
+
+Adds one or more terms to a locale's **global** glossary (the locale-wide one, not a
+project-scoped one — this plugin's abilities don't currently expose writing to project-scoped
+glossaries), in a single batched call (up to 50 items). The underlying global translation set and
+glossary row are created automatically if they don't exist yet for the locale — this is the one
+ability in the plugin that's expected to do that, since (unlike `get-glossary`) writing is its
+entire purpose.
+
+**Never overwrites an existing term.** If a submitted `(term, part_of_speech)` pair already exists
+with the *same* translation, it's reported as `unchanged`. If it already exists with a *different*
+translation, it's reported as an `error` rather than silently replacing it — this is stricter than
+GlotPress's own stock duplicate check (which only catches an exact term+part-of-speech+translation
+match, and would otherwise happily create a second, conflicting entry for the same term).
+
+**Input**:
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
+| `translation_set_slug` | string | no | `default` | The global glossary's variant slug. Almost always the default. |
+| `entries` | array (1-50 items) | yes | – | The glossary entries to add; see below. |
+
+Each `entries` item:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `term` | string | yes | The source term or phrase, e.g. `checkout`. Plain readable text (letters/numbers/standard punctuation), must start and end with a letter or digit. By existing convention on this site, this is the English source term, not the translation. |
+| `part_of_speech` | `noun` \| `verb` \| `adjective` \| `adverb` \| `interjection` \| `conjunction` \| `preposition` \| `pronoun` \| `expression` \| `abbreviation` | yes | The grammatical part of speech. |
+| `translation` | string | yes | The required/suggested translation for this term in the target locale. |
+| `comment` | string | no | Optional context or usage note for the term. |
+
+**Output**: array, one entry per input item, in order:
+
+| Field | Type | Description |
+|---|---|---|
+| `term` | string | The term this result is for. |
+| `part_of_speech` | string | The part of speech this result is for. |
+| `result` | `"created"` \| `"unchanged"` \| `"error"` | What happened. |
+| `entry_id` | integer\|null | The resulting (or pre-existing, for `unchanged`) glossary entry ID, or null on error. |
+| `error_message` | string\|null | Why this item failed (including the "already exists with a different translation" case), or null if it did not. |

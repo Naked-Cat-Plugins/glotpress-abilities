@@ -38,6 +38,7 @@ class Abilities_Registrar {
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Get_Strings',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Update_Translations',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Find_Translations_In_Other_Projects',
+		'\NakedCatPlugins\GlotpressAbilities\Abilities\Add_Glossary_Entries',
 	);
 
 	/**
