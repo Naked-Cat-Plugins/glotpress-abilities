@@ -1,6 +1,3 @@
-#### TBA
-
-
 #### 0.2 - 2026-07-30
 
 * [NEW] `nakedcat-glotpress/add-glossary-entries` ability — add terms to a locale's global glossary in batch, without ever overwriting an existing term's translation
