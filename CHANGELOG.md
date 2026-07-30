@@ -1,3 +1,8 @@
+#### TBA
+
+* [FIX] Stop translating the plugin's own header data (`get_plugin_data()`) during `plugins_loaded`, which triggered a "translation loading too early" notice on WordPress 6.7+
+
+
 #### 0.3 - 2026-07-30
 
 * [NEW] `nakedcat-glotpress/import-originals` ability — import a project's originals (source strings) from a .pot/.po file's contents, reusing GlotPress's own import/diff/fuzzy-match/obsolete machinery; intended for release automation (e.g. a GitHub Actions workflow updating originals whenever a version is tagged)

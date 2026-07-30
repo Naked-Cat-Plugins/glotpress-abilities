@@ -38,7 +38,7 @@ function init() {
 	if ( ! function_exists( 'get_plugin_data' ) ) {
 		include ABSPATH . '/wp-admin/includes/plugin.php';
 	}
-	$plugin_data = get_plugin_data( NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_FILE );
+	$plugin_data = get_plugin_data( NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_FILE, false, false );
 	define( 'NAKEDCAT_GLOTPRESS_ABILITIES_VERSION', $plugin_data['Version'] );
 	define( 'NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_NAME', $plugin_data['Name'] );
 
