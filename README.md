@@ -140,7 +140,7 @@ claude mcp list          # should show glotpress-mcp as ✔ Connected
 ```
 
 Then, in a Claude Code session connected to this MCP server, ask it to discover abilities (it
-will call the `mcp-adapter-discover-abilities` tool) and confirm the six `nakedcat-glotpress/*`
+will call the `mcp-adapter-discover-abilities` tool) and confirm the seven `nakedcat-glotpress/*`
 abilities listed above appear.
 
 ## Abilities
@@ -153,11 +153,16 @@ abilities listed above appear.
 | [`nakedcat-glotpress/update-translations`](#nakedcat-glotpressupdate-translations) | write | Create/update translations for a project/locale, in batch |
 | [`nakedcat-glotpress/find-translations-in-other-projects`](#nakedcat-glotpressfind-translations-in-other-projects) | read | Cross-project translation-memory lookup for terminology consistency |
 | [`nakedcat-glotpress/add-glossary-entries`](#nakedcat-glotpressadd-glossary-entries) | write | Add terms to a locale's global glossary, in batch |
+| [`nakedcat-glotpress/import-originals`](#nakedcat-glotpressimport-originals) | write | Import a project's originals (source strings) from a .pot/.po file's contents |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
 references) → `update-translations` (submit the results) → optionally `add-glossary-entries` for
 any new terminology worth capturing for next time.
+
+`import-originals` is a separate, earlier step in a project's lifecycle: it keeps a project's
+*source strings* in sync with the plugin/theme's actual codebase (typically from release
+automation), independent of any locale or translation work.
 
 ---
 
@@ -317,6 +322,38 @@ writing rows directly:
 - **Refuses the whole call** if `locale` is `pt-ao90` and the project also has a `pt` translation
   set while `gp-convert-pt-ao90` is active, since that plugin auto-syncs `pt-ao90` from `pt` on
   every save — direct writes there would just be overwritten. Submit to `pt` instead.
+- **Automatically mirrors `pt` writes to `pt-ao`**, if the project has a `pt-ao` set. See below.
+
+#### Automatic `pt` → `pt-ao` mirroring
+
+This plugin maintains a Portuguese (Portugal) locale (`pt`) and a separate Portuguese (Angola)
+locale (`pt-ao`, `wp_locale` `pt_AO`) for these products. Angola's Portuguese is meant to always
+read identical to Portugal's, so there is no dialectal content worth maintaining separately.
+
+Whenever a call's `locale` is **exactly** `pt` (never `pt-ao` itself, `pt-ao90`, `pt-br`, or
+anything matched by prefix/substring) and the target project already has a `pt-ao` translation set
+for the same `translation_set_slug`, every item whose `pt` write succeeds (`created` or
+`unchanged`, not `error`) is automatically written to that project's `pt-ao` set too, using the
+same `original_id`, `translation`, and `status` that were submitted for `pt`. If a project has no
+`pt-ao` set, mirroring is silently skipped for it — most projects don't have one.
+
+**The mirror always overwrites `pt-ao`, with no exceptions** — including replacing an existing
+`current` translation there — regardless of any per-call behaviour that otherwise applies to the
+locale actually requested. This is intentional: `pt-ao` is meant to be a pure mirror of `pt`, never
+an independently-curated set.
+
+This mirroring is **one-way only**. A direct call with `locale: "pt-ao"` writes only to `pt-ao`,
+exactly as any other locale would, and never touches `pt`.
+
+Each result item's `pt_ao_mirror` field reports what happened on the `pt-ao` side (`result`,
+`translation_id`, `status`, `error_message`), or `null` if no mirroring was attempted for that item
+(non-`pt` locale, no `pt-ao` set for the project, or the item's own `pt` write did not succeed).
+
+**Don't confuse `pt-ao` (Angola) with `pt-ao90` (Portugal, post-1990-orthographic-agreement
+spelling)** — the two slugs are unrelated other than both unfortunately starting with `pt-a`.
+`pt-ao90` is handled by the separate, read-only guard described above (backed by the
+`gp-convert-pt-ao90` plugin); this mirroring logic is independent of it and does not touch
+`pt-ao90` in any way.
 
 **Input**:
 
@@ -344,8 +381,20 @@ Each `translations` item:
 | `translation_id` | integer\|null | The resulting (or pre-existing, for `unchanged`) translation row ID, or null on error. |
 | `status` | string\|null | The translation's resulting status, or null on error. |
 | `error_message` | string\|null | Why this item failed, or null if it did not. |
+| `pt_ao_mirror` | object\|null | The `pt` → `pt-ao` mirror outcome for this item; see below. Null if no mirroring was attempted. |
 
-One item failing does not abort the batch — only the `pt-ao90` guard rejects the whole call.
+Each non-null `pt_ao_mirror` object:
+
+| Field | Type | Description |
+|---|---|---|
+| `result` | `"created"` \| `"unchanged"` \| `"error"` | Same meaning as the outer `result`, but for the `pt-ao` mirror write. |
+| `translation_id` | integer\|null | The resulting (or pre-existing, for `unchanged`) `pt-ao` translation row ID, or null on error. |
+| `status` | string\|null | The `pt-ao` translation's resulting status, or null on error. |
+| `error_message` | string\|null | Why the `pt-ao` mirror write failed, or null if it did not. |
+
+One item failing does not abort the batch — only the `pt-ao90` guard rejects the whole call. A
+`pt_ao_mirror` error on one item likewise does not abort the batch or affect that item's own `pt`
+result.
 
 ---
 
@@ -424,3 +473,74 @@ Each `entries` item:
 | `result` | `"created"` \| `"unchanged"` \| `"error"` | What happened. |
 | `entry_id` | integer\|null | The resulting (or pre-existing, for `unchanged`) glossary entry ID, or null on error. |
 | `error_message` | string\|null | Why this item failed (including the "already exists with a different translation" case), or null if it did not. |
+
+---
+
+### `nakedcat-glotpress/import-originals`
+
+Imports a project's **originals** (source strings, e.g. from `__()`/`_e()` calls) from the raw
+contents of a `.pot` (or `.po`) file, diffing them against what the project already has. Reuses
+GlotPress's own import machinery (`GP_Format_PO::read_originals_from_file()` +
+`GP_Original::import_for_project()`, the same pair the GlotPress admin's own "Import Originals"
+page and WP-CLI's `wp glotpress import-originals` command call) rather than writing rows directly:
+
+- New strings (by `msgid`/`msgid_plural`/`msgctxt`) are **added**.
+- Strings that already exist with the same key but a changed comment, reference, status, or
+  `gp-priority:` flag are **updated** in place. A string that's unchanged is left alone entirely
+  and isn't counted anywhere in the output — GlotPress's own import doesn't track that case either.
+- Strings present before but missing from the new file are marked **obsolete** (not deleted; their
+  translations are preserved, but they drop out of the active string list) — *unless* a new
+  string is a close enough textual match (a similarity heuristic GlotPress applies internally), in
+  which case it's treated as a **fuzzy** rename: the old original is updated to the new text and its
+  existing current translations are marked fuzzy for re-review, instead of the rename being treated
+  as one brand-new untranslated string plus one obsoleted one.
+- Only `msgid`-side data is read; any `msgstr` content in the submitted file is ignored. This means
+  a `.po` file with real translations in it behaves identically to a `.pot` template for this
+  ability's purposes.
+
+This ability is **locale-independent** — there's no `locale` or `translation_set_slug` input,
+because originals belong to the project itself, not to any particular translation set.
+
+**Intended use: release automation.** A GitHub Actions workflow can call this over the REST API
+whenever a new version is tagged, submitting the freshly-built `.pot` file's contents so the
+GlotPress project's source strings stay in sync with the codebase automatically, e.g.:
+
+```yaml
+- name: Update originals on GlotPress
+  run: |
+    JSON=$(jq -n --arg pot "$(cat languages/my-plugin.pot)" \
+      '{input: {project_path: "wp-plugins/my-plugin", pot_content: $pot}}')
+    curl -sf -u "${{ secrets.GLOTPRESS_USER }}:${{ secrets.GLOTPRESS_APP_PASSWORD }}" \
+      -X POST "https://your-glotpress-site.example/wp-json/wp-abilities/v1/abilities/nakedcat-glotpress/import-originals/run" \
+      -H "Content-Type: application/json" \
+      -d "$JSON"
+```
+
+(WordPress's own Abilities API REST route expects the ability's input nested under a top-level
+`"input"` key, as above, not as bare top-level JSON fields — this is a core REST convention, not
+specific to this plugin. `jq -n --arg` handles the JSON-encoding of the `.pot` file's raw text
+safely. The Application Password user needs GlotPress admin permission, same as every other
+ability in this plugin.) An MCP client like Claude Code can call it the same way any other ability
+here is called.
+
+**Input**:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `project_path` | string | yes | The GlotPress project path to import originals into, e.g. `wp-plugins/my-plugin`. |
+| `pot_content` | string | yes | The full raw text contents of a `.pot` (or `.po`) file. |
+
+**Output**: object:
+
+| Field | Type | Description |
+|---|---|---|
+| `project_path` | string | The project this import targeted. |
+| `originals_added` | integer | Number of brand-new originals created. |
+| `originals_updated` | integer | Number of existing originals whose comment/references/status/priority changed and were updated in place. |
+| `originals_fuzzied` | integer | Number of originals matched as a near-rename of a string no longer present; the old original was updated and its existing current translations marked fuzzy. |
+| `originals_obsoleted` | integer | Number of existing originals no longer present in the file (and not matched as a rename) that were marked obsolete. |
+| `originals_error` | integer | Number of new originals that failed to be created due to an error. |
+
+Rejects the whole call (`WP_Error`) if `project_path` doesn't resolve to a project, if
+`pot_content` is empty, or if `pot_content` can't be parsed as a valid PO/POT file — there's no
+per-item result list here, since this is a single-file operation rather than a batch of items.
