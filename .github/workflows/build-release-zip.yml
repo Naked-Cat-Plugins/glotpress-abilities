@@ -19,7 +19,7 @@ jobs:
 
     # Checkout the code from the repository
     - name: ⬇️ Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     # Create the zip file excluding files and directories listed in .distignore
     - name: 📦 Zip Release
