@@ -1,6 +1,6 @@
 <?php
 /**
- * Ability: add entries to a locale's global glossary, batched.
+ * Ability: add entries to a locale's global glossary, or to one project's glossary, batched.
  *
  * @package NakedCatPlugins\GlotpressAbilities
  */
@@ -15,11 +15,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Registers and implements the nakedcat-glotpress/add-glossary-entries ability.
  *
- * Targets the locale-wide global glossary only (project_id = 0), matching this plugin's
- * production usage: a single shared glossary per locale rather than per-project ones. The
- * underlying global translation set / glossary row is auto-vivified if missing, since (unlike
- * nakedcat-glotpress/get-glossary, which is strictly read-only) this ability's whole purpose is
- * to write to it.
+ * Targets the locale-wide global glossary (project_id = 0) by default. With project_path, it
+ * targets that project's own glossary instead, for the terms where one project must deviate from
+ * the global glossary (for example a plugin that implements a law, whose official wording in the
+ * target language decides). GlotPress's translation editor, and get-glossary, give a project's
+ * glossary precedence over the global one.
+ *
+ * The glossary row is auto-vivified if missing, since (unlike nakedcat-glotpress/get-glossary,
+ * which is strictly read-only) this ability's whole purpose is to write to it. The global
+ * translation set is created too if missing; a project's translation set is not: it has to exist
+ * already, like for every other ability.
  */
 class Add_Glossary_Entries {
 
@@ -39,7 +44,7 @@ class Add_Glossary_Entries {
 			self::ABILITY_NAME,
 			array(
 				'label'               => __( 'Add GlotPress glossary entries', 'nakedcat-glotpress-abilities' ),
-				'description'         => __( 'Adds one or more terms to a locale\'s global glossary, in a single batched call. Never overwrites an existing term\'s translation — an entry whose term and part of speech already exist with a different translation is reported as an error rather than replaced.', 'nakedcat-glotpress-abilities' ),
+				'description'         => __( 'Adds one or more terms to a locale\'s global glossary, or with project_path to that project\'s own glossary (which takes precedence over the global one for that project), in a single batched call. Never overwrites an existing term\'s translation — an entry whose term and part of speech already exist with a different translation is reported as an error rather than replaced.', 'nakedcat-glotpress-abilities' ),
 				'category'            => 'glotpress',
 				'input_schema'        => self::input_schema(),
 				'output_schema'       => self::output_schema(),
@@ -74,9 +79,13 @@ class Add_Glossary_Entries {
 					'type'        => 'string',
 					'description' => __( 'The GlotPress locale slug to add glossary entries for, e.g. "pt", "pt-br".', 'nakedcat-glotpress-abilities' ),
 				),
+				'project_path'         => array(
+					'type'        => 'string',
+					'description' => __( 'The GlotPress project path whose own glossary to add to, e.g. "wp-plugins/my-plugin". The project must already have a translation set for the locale. Its glossary is created if it has none (a parent project\'s glossary is never written to). Omit to add to the locale-wide global glossary.', 'nakedcat-glotpress-abilities' ),
+				),
 				'translation_set_slug' => array(
 					'type'        => 'string',
-					'description' => __( 'The global glossary\'s variant slug. Almost always the default.', 'nakedcat-glotpress-abilities' ),
+					'description' => __( 'The glossary\'s translation set variant slug. Almost always the default.', 'nakedcat-glotpress-abilities' ),
 					'default'     => 'default',
 				),
 				'entries'              => array(
@@ -162,6 +171,7 @@ class Add_Glossary_Entries {
 		$input = is_array( $input ) ? $input : array();
 
 		$locale_slug          = isset( $input['locale'] ) ? (string) $input['locale'] : '';
+		$project_path         = isset( $input['project_path'] ) ? (string) $input['project_path'] : '';
 		$translation_set_slug = ! empty( $input['translation_set_slug'] ) ? (string) $input['translation_set_slug'] : 'default';
 		$items                = isset( $input['entries'] ) && is_array( $input['entries'] ) ? $input['entries'] : array();
 
@@ -176,7 +186,9 @@ class Add_Glossary_Entries {
 			);
 		}
 
-		$glossary = self::get_or_create_global_glossary( $translation_set_slug, $locale_slug );
+		$glossary = '' === $project_path
+			? self::get_or_create_global_glossary( $translation_set_slug, $locale_slug )
+			: self::get_or_create_project_glossary( $project_path, $translation_set_slug, $locale_slug );
 
 		if ( is_wp_error( $glossary ) ) {
 			return $glossary;
@@ -228,9 +240,69 @@ class Add_Glossary_Entries {
 	}
 
 	/**
+	 * Resolves a project's own glossary for a locale, creating the glossary row if the project has
+	 * none yet. Never falls back to a parent project's glossary: a write must land on the project
+	 * that was asked for.
+	 *
+	 * @param string $project_path         The GlotPress project path.
+	 * @param string $translation_set_slug The translation set variant slug.
+	 * @param string $locale_slug          The GlotPress locale slug.
+	 * @return \GP_Glossary|\WP_Error
+	 */
+	private static function get_or_create_project_glossary( $project_path, $translation_set_slug, $locale_slug ) {
+		$project = \GP::$project->by_path( $project_path );
+
+		if ( ! $project ) {
+			return new \WP_Error(
+				'nakedcat_glotpress_project_not_found',
+				sprintf(
+					/* translators: %s: GlotPress project path. */
+					__( 'No GlotPress project was found at path "%s".', 'nakedcat-glotpress-abilities' ),
+					$project_path
+				)
+			);
+		}
+
+		// For a real (non-zero-id) project this finder never auto-creates the translation set.
+		$translation_set = \GP::$translation_set->by_project_id_slug_and_locale( $project->id, $translation_set_slug, $locale_slug );
+
+		if ( ! $translation_set ) {
+			return new \WP_Error(
+				'nakedcat_glotpress_translation_set_not_found',
+				sprintf(
+					/* translators: 1: GlotPress project path, 2: GlotPress locale slug, 3: translation set variant slug. */
+					__( 'Project "%1$s" has no "%3$s" translation set for locale "%2$s".', 'nakedcat-glotpress-abilities' ),
+					$project_path,
+					$locale_slug,
+					$translation_set_slug
+				)
+			);
+		}
+
+		$glossary = \GP::$glossary->by_set_id( $translation_set->id );
+
+		if ( ! $glossary ) {
+			$glossary = \GP::$glossary->create( array( 'translation_set_id' => $translation_set->id ) );
+		}
+
+		if ( ! $glossary ) {
+			return new \WP_Error(
+				'nakedcat_glotpress_glossary_not_found',
+				sprintf(
+					/* translators: %s: GlotPress project path. */
+					__( 'Could not resolve or create the glossary of project "%s" for this locale.', 'nakedcat-glotpress-abilities' ),
+					$project_path
+				)
+			);
+		}
+
+		return $glossary;
+	}
+
+	/**
 	 * Processes a single glossary entry item.
 	 *
-	 * @param \GP_Glossary $glossary The resolved global glossary.
+	 * @param \GP_Glossary $glossary The resolved glossary (global or project).
 	 * @param mixed        $item     The raw input item.
 	 * @return array<string, mixed>
 	 */

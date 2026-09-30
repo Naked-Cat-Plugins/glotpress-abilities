@@ -152,7 +152,7 @@ abilities listed above appear.
 | [`nakedcat-glotpress/get-strings`](#nakedcat-glotpressget-strings) | read | Strings (originals + their translation) for a project/locale, filtered by status |
 | [`nakedcat-glotpress/update-translations`](#nakedcat-glotpressupdate-translations) | write | Create/update translations for a project/locale, in batch |
 | [`nakedcat-glotpress/find-translations-in-other-projects`](#nakedcat-glotpressfind-translations-in-other-projects) | read | Cross-project translation-memory lookup for terminology consistency |
-| [`nakedcat-glotpress/add-glossary-entries`](#nakedcat-glotpressadd-glossary-entries) | write | Add terms to a locale's global glossary, in batch |
+| [`nakedcat-glotpress/add-glossary-entries`](#nakedcat-glotpressadd-glossary-entries) | write | Add terms to a locale's global glossary, or to one project's glossary, in batch |
 | [`nakedcat-glotpress/import-originals`](#nakedcat-glotpressimport-originals) | write | Import a project's originals (source strings) from a .pot/.po file's contents |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
@@ -434,12 +434,19 @@ Each `matches` item:
 
 ### `nakedcat-glotpress/add-glossary-entries`
 
-Adds one or more terms to a locale's **global** glossary (the locale-wide one, not a
-project-scoped one — this plugin's abilities don't currently expose writing to project-scoped
-glossaries), in a single batched call (up to 50 items). The underlying global translation set and
-glossary row are created automatically if they don't exist yet for the locale — this is the one
-ability in the plugin that's expected to do that, since (unlike `get-glossary`) writing is its
-entire purpose.
+Adds one or more terms to a locale's **global** glossary (the locale-wide one) or, with
+`project_path`, to that **project's own glossary**, in a single batched call (up to 50 items).
+
+A project glossary is for the terms where one project has to deviate from the global glossary: a
+plugin that implements a law, for example, where the law's official wording in the target language
+decides. GlotPress's translation editor, and `get-glossary` with a `project_path`, give a project's
+glossary precedence over the global one for that project.
+
+The glossary row is created automatically if it doesn't exist yet, since (unlike `get-glossary`)
+writing is this ability's entire purpose. For the global glossary, the underlying translation set
+is created too. A project's translation set is not: it has to exist already, as for every other
+ability. A write with `project_path` always lands on that project's own glossary, never on a
+parent project's glossary that `get-glossary` would fall back to.
 
 **Never overwrites an existing term.** If a submitted `(term, part_of_speech)` pair already exists
 with the *same* translation, it's reported as `unchanged`. If it already exists with a *different*
@@ -452,7 +459,8 @@ match, and would otherwise happily create a second, conflicting entry for the sa
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
-| `translation_set_slug` | string | no | `default` | The global glossary's variant slug. Almost always the default. |
+| `project_path` | string | no | – | The project whose own glossary to add to, e.g. `wp-plugins/my-plugin`. Omit for the global glossary. |
+| `translation_set_slug` | string | no | `default` | The glossary's translation set variant slug. Almost always the default. |
 | `entries` | array (1-50 items) | yes | – | The glossary entries to add; see below. |
 
 Each `entries` item:
