@@ -1,4 +1,4 @@
-#### TBA
+#### 0.4 - 2026-09-30
 
 * [NEW] `nakedcat-glotpress/add-glossary-entries` takes an optional `project_path`, to add terms to that project's own glossary instead of the locale's global one
 * [FIX] Stop translating the plugin's own header data (`get_plugin_data()`) during `plugins_loaded`, which triggered a "translation loading too early" notice on WordPress 6.7+
