@@ -1,3 +1,8 @@
+#### TBA
+
+* [NEW] Waiting translations whose English text was reworded after they were submitted are flagged as stale, and can be listed on their own
+
+
 #### 0.4 - 2026-09-30
 
 * [NEW] `nakedcat-glotpress/add-glossary-entries` takes an optional `project_path`, to add terms to that project's own glossary instead of the locale's global one
