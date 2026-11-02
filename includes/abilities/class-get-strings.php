@@ -87,6 +87,11 @@ class Get_Strings {
 					'minItems'    => 1,
 					'default'     => 'untranslated',
 				),
+				'stale_only'           => array(
+					'type'        => 'boolean',
+					'description' => __( 'Return only stale waiting translations: waiting strings whose original was reworded by an originals import after the translation was submitted, so the translation describes text that no longer exists. Replaces the status filter (stale strings are always waiting).', 'nakedcat-glotpress-abilities' ),
+					'default'     => false,
+				),
 				'page'                 => array(
 					'type'        => 'integer',
 					'description' => __( 'The page of results to return, starting at 1.', 'nakedcat-glotpress-abilities' ),
@@ -175,6 +180,10 @@ class Get_Strings {
 								'type'        => 'integer',
 								'description' => __( 'The original\'s priority: -2 hidden, -1 low, 0 normal, 1 high.', 'nakedcat-glotpress-abilities' ),
 							),
+							'stale'              => array(
+								'type'        => 'boolean',
+								'description' => __( 'True for a waiting translation whose original was reworded by an originals import after the translation was submitted: review it against the new text before approving. Always false for other statuses. Only rewordings recorded since this plugin started tracking them are known.', 'nakedcat-glotpress-abilities' ),
+							),
 						),
 					),
 				),
@@ -199,6 +208,7 @@ class Get_Strings {
 		$status               = ! empty( $input['status'] ) ? $input['status'] : 'untranslated';
 		$page                 = ! empty( $input['page'] ) ? max( 1, (int) $input['page'] ) : 1;
 		$per_page             = ! empty( $input['per_page'] ) ? min( self::MAX_PER_PAGE, max( 1, (int) $input['per_page'] ) ) : 50;
+		$stale_only           = ! empty( $input['stale_only'] );
 
 		$project = \GP::$project->by_path( $project_path );
 
@@ -239,7 +249,18 @@ class Get_Strings {
 			);
 		}
 
-		if ( is_array( $status ) ) {
+		if ( $stale_only ) {
+			$entries = array_values(
+				array_filter(
+					self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array( 'status' => 'waiting' ) ) ),
+					function ( $entry ) {
+						return $entry->nakedcat_stale;
+					}
+				)
+			);
+			$total   = count( $entries );
+			$entries = array_slice( $entries, ( $page - 1 ) * $per_page, $per_page );
+		} elseif ( is_array( $status ) ) {
 			$statuses = array_values( array_unique( array_map( 'strval', $status ) ) );
 			$unknown  = array_diff( $statuses, self::STATUSES );
 
@@ -255,7 +276,7 @@ class Get_Strings {
 				);
 			}
 
-			$entries = self::entries_for_statuses( $project, $translation_set, $statuses );
+			$entries = self::with_stale_flags( self::entries_for_statuses( $project, $translation_set, $statuses ) );
 			$total   = count( $entries );
 			$entries = array_slice( $entries, ( $page - 1 ) * $per_page, $per_page );
 		} else {
@@ -279,7 +300,7 @@ class Get_Strings {
 
 			\GP::$translation->per_page = $per_page;
 
-			$entries = \GP::$translation->for_translation( $project, $translation_set, $page, array( 'status' => $status ) );
+			$entries = self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, $page, array( 'status' => $status ) ) );
 			$total   = (int) \GP::$translation->found_rows;
 		}
 
@@ -347,6 +368,37 @@ class Get_Strings {
 			'extracted_comments' => $entry->extracted_comments ? $entry->extracted_comments : '',
 			'references'         => $entry->references,
 			'priority'           => isset( $entry->priority ) ? (int) $entry->priority : 0,
+			'stale'              => ! empty( $entry->nakedcat_stale ),
 		);
+	}
+
+	/**
+	 * Flags each entry with nakedcat_stale: a waiting translation whose original was reworded
+	 * after the translation was added.
+	 *
+	 * @param object[] $entries GlotPress entries, as GP_Translation::for_translation() returns them.
+	 * @return object[] The same entries, flagged.
+	 */
+	private static function with_stale_flags( $entries ) {
+		$waiting_original_ids = array();
+
+		foreach ( $entries as $entry ) {
+			if ( 'waiting' === $entry->translation_status ) {
+				$waiting_original_ids[] = (int) $entry->original_id;
+			}
+		}
+
+		$reworded_at = \NakedCatPlugins\GlotpressAbilities\Original_History::reworded_at( $waiting_original_ids );
+
+		foreach ( $entries as $entry ) {
+			$original_id = (int) $entry->original_id;
+
+			$entry->nakedcat_stale = 'waiting' === $entry->translation_status
+				&& isset( $reworded_at[ $original_id ] )
+				&& ! empty( $entry->translation_added )
+				&& $reworded_at[ $original_id ] > $entry->translation_added;
+		}
+
+		return $entries;
 	}
 }

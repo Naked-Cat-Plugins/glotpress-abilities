@@ -288,6 +288,7 @@ review already-translated strings for consistency.
 | `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
 | `translation_set_slug` | string | no | `default` | The translation set variant slug. |
 | `status` | array of string, or string | no | `untranslated` | A list of statuses, or a single status (several joined with `_or_` work only in the combinations described below). |
+| `stale_only` | boolean | no | `false` | Return only stale waiting translations (see below). Replaces the `status` filter. |
 | `page` | integer | no | `1` | The page of results to return, starting at 1. |
 | `per_page` | integer | no | `50` (max `200`) | How many strings to return per page. |
 
@@ -331,6 +332,17 @@ Each `strings` item:
 | `extracted_comments` | string | Developer/translator context comment for this string, if any. |
 | `references` | array of string | Source locations (`file:line`) where this string is used, if known. |
 | `priority` | integer | The original's priority: `-2` hidden, `-1` low, `0` normal, `1` high. |
+| `stale` | boolean | True for a stale waiting translation (see below); always false for other statuses. |
+
+**Stale waiting translations.** When originals are re-imported after their English wording
+changed, GlotPress rewrites a reworded original in place (`originals_fuzzied` in
+`import-originals`). A `current` translation of it is demoted to `fuzzy`, but a `waiting` one stays
+`waiting` while describing text that no longer exists, and is easy to approve by mistake. Such a
+translation is flagged `stale`: its original was reworded after the translation was submitted.
+`stale_only` returns just those (they are always waiting, so the `status` input is ignored).
+GlotPress keeps no modification date on originals, so this plugin records each rewording itself, as
+GlotPress meta on the original (`nakedcat_reworded_at`), through GlotPress's own import hooks: only
+rewordings since this version of the plugin was installed are known.
 
 ---
 
