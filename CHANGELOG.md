@@ -1,3 +1,10 @@
+#### TBA
+
+* [NEW] Get strings in several statuses in one call, such as untranslated, fuzzy and waiting together
+* [FIX] Asking for strings with a combination of statuses that GlotPress cannot answer correctly now returns a clear error instead of every string in the project
+* [FIX] Asking for strings without a status now returns the untranslated ones, as documented, instead of every string in the project
+
+
 #### 0.4 - 2026-09-30
 
 * [NEW] `nakedcat-glotpress/add-glossary-entries` takes an optional `project_path`, to add terms to that project's own glossary instead of the locale's global one

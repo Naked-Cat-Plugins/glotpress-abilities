@@ -23,6 +23,8 @@ class Get_Strings {
 
 	const MAX_PER_PAGE = 200;
 
+	const STATUSES = array( 'current', 'waiting', 'rejected', 'fuzzy', 'old', 'changesrequested', 'untranslated' );
+
 	/**
 	 * Registers the ability with the Abilities API.
 	 */
@@ -76,8 +78,13 @@ class Get_Strings {
 					'default'     => 'default',
 				),
 				'status'               => array(
-					'type'        => 'string',
-					'description' => __( 'A single translation status, or several joined with "_or_". Valid values: current, waiting, rejected, fuzzy, old, changesrequested, untranslated (meaning the original has no translation row at all). A single status on its own is always accurate (e.g. "untranslated", "fuzzy", "current" each reliably return only matching strings). Important GlotPress quirk: combining "untranslated" with another status that is NOT "current" (e.g. "untranslated_or_fuzzy") is unreliable and will incorrectly include already-translated strings too. To fetch multiple categories of strings needing work, make one call per status instead of combining them, or include "current" in the combination (e.g. "current_or_waiting_or_fuzzy_or_untranslated_or_changesrequested" is safe and is what GlotPress\'s own translate editor uses by default).', 'nakedcat-glotpress-abilities' ),
+					'type'        => array( 'string', 'array' ),
+					'description' => __( 'Which strings to return, by translation status. Valid statuses: current, waiting, rejected, fuzzy, old, changesrequested, untranslated (meaning the original has no translation row at all). Either a list of statuses, e.g. ["untranslated", "fuzzy", "waiting"], which returns exactly the strings in any of them, merged and paginated together; or a single status as a string, e.g. "fuzzy". A string may also join several statuses with "_or_", as GlotPress\'s own URLs do, but a combination that includes "untranslated" and leaves out "current" (e.g. "untranslated_or_fuzzy") is refused, since GlotPress would return every string in the project for it: use the list form instead.', 'nakedcat-glotpress-abilities' ),
+					'items'       => array(
+						'type' => 'string',
+						'enum' => self::STATUSES,
+					),
+					'minItems'    => 1,
 					'default'     => 'untranslated',
 				),
 				'page'                 => array(
@@ -189,7 +196,7 @@ class Get_Strings {
 		$project_path         = isset( $input['project_path'] ) ? (string) $input['project_path'] : '';
 		$locale_slug          = isset( $input['locale'] ) ? (string) $input['locale'] : '';
 		$translation_set_slug = ! empty( $input['translation_set_slug'] ) ? (string) $input['translation_set_slug'] : 'default';
-		$status               = ! empty( $input['status'] ) ? (string) $input['status'] : 'untranslated_or_fuzzy';
+		$status               = ! empty( $input['status'] ) ? $input['status'] : 'untranslated';
 		$page                 = ! empty( $input['page'] ) ? max( 1, (int) $input['page'] ) : 1;
 		$per_page             = ! empty( $input['per_page'] ) ? min( self::MAX_PER_PAGE, max( 1, (int) $input['per_page'] ) ) : 50;
 
@@ -232,26 +239,54 @@ class Get_Strings {
 			);
 		}
 
-		\GP::$translation->per_page = $per_page;
+		if ( is_array( $status ) ) {
+			$statuses = array_values( array_unique( array_map( 'strval', $status ) ) );
+			$unknown  = array_diff( $statuses, self::STATUSES );
 
-		$entries = \GP::$translation->for_translation( $project, $translation_set, $page, array( 'status' => $status ) );
-		$total   = (int) \GP::$translation->found_rows;
+			if ( $unknown ) {
+				return new \WP_Error(
+					'nakedcat_glotpress_invalid_status',
+					sprintf(
+						/* translators: 1: comma-separated invalid statuses, 2: comma-separated valid statuses. */
+						__( 'Not translation statuses: %1$s. Valid statuses: %2$s.', 'nakedcat-glotpress-abilities' ),
+						implode( ', ', $unknown ),
+						implode( ', ', self::STATUSES )
+					)
+				);
+			}
+
+			$entries = self::entries_for_statuses( $project, $translation_set, $statuses );
+			$total   = count( $entries );
+			$entries = array_slice( $entries, ( $page - 1 ) * $per_page, $per_page );
+		} else {
+			$status   = (string) $status;
+			$statuses = explode( '_or_', $status );
+
+			// GlotPress LEFT JOINs translations as soon as "untranslated" is in the list, filtering the
+			// join by the other statuses: without "current", every string whose translation is in none
+			// of them comes back as an empty match, so the call would return the whole project.
+			if ( count( $statuses ) > 1 && in_array( 'untranslated', $statuses, true ) && ! in_array( 'current', $statuses, true ) ) {
+				return new \WP_Error(
+					'nakedcat_glotpress_unreliable_status_combination',
+					sprintf(
+						/* translators: 1: the status string submitted, 2: the same statuses as a JSON list. */
+						__( 'The status "%1$s" combines "untranslated" with other statuses but not "current", which GlotPress answers with every string in the project. Pass the statuses as a list instead: %2$s.', 'nakedcat-glotpress-abilities' ),
+						$status,
+						wp_json_encode( $statuses )
+					)
+				);
+			}
+
+			\GP::$translation->per_page = $per_page;
+
+			$entries = \GP::$translation->for_translation( $project, $translation_set, $page, array( 'status' => $status ) );
+			$total   = (int) \GP::$translation->found_rows;
+		}
 
 		$strings = array();
 
 		foreach ( $entries as $entry ) {
-			$strings[] = array(
-				'original_id'        => (int) $entry->original_id,
-				'translation_id'     => $entry->id ? (int) $entry->id : null,
-				'singular'           => $entry->singular,
-				'plural'             => ( isset( $entry->plural ) && '' !== $entry->plural ) ? $entry->plural : null,
-				'context'            => ( isset( $entry->context ) && '' !== $entry->context ) ? $entry->context : null,
-				'translations'       => $entry->translations,
-				'translation_status' => $entry->translation_status ? $entry->translation_status : null,
-				'extracted_comments' => $entry->extracted_comments ? $entry->extracted_comments : '',
-				'references'         => $entry->references,
-				'priority'           => isset( $entry->priority ) ? (int) $entry->priority : 0,
-			);
+			$strings[] = self::format_entry( $entry );
 		}
 
 		return array(
@@ -259,6 +294,59 @@ class Get_Strings {
 			'page'     => $page,
 			'per_page' => $per_page,
 			'strings'  => $strings,
+		);
+	}
+
+	/**
+	 * Runs one GlotPress query per status and merges the results, each string once.
+	 *
+	 * The same translation row can only match one status, but an original with no translation in
+	 * the set matches "untranslated" alone, so the only possible duplicate is a repeated status.
+	 * Results keep the order of the statuses asked for, then GlotPress's own order within each.
+	 *
+	 * @param \GP_Project         $project         The project.
+	 * @param \GP_Translation_Set $translation_set The translation set.
+	 * @param string[]            $statuses        Valid statuses, no duplicates.
+	 * @return object[] GlotPress entries.
+	 */
+	private static function entries_for_statuses( $project, $translation_set, $statuses ) {
+		$entries = array();
+		$seen    = array();
+
+		foreach ( $statuses as $single_status ) {
+			foreach ( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array( 'status' => $single_status ) ) as $entry ) {
+				$key = $entry->original_id . '|' . ( $entry->id ? $entry->id : 0 );
+
+				if ( isset( $seen[ $key ] ) ) {
+					continue;
+				}
+
+				$seen[ $key ] = true;
+				$entries[]    = $entry;
+			}
+		}
+
+		return $entries;
+	}
+
+	/**
+	 * Formats a GlotPress entry for the output.
+	 *
+	 * @param object $entry A GlotPress entry, as GP_Translation::for_translation() returns them.
+	 * @return array<string, mixed>
+	 */
+	private static function format_entry( $entry ) {
+		return array(
+			'original_id'        => (int) $entry->original_id,
+			'translation_id'     => $entry->id ? (int) $entry->id : null,
+			'singular'           => $entry->singular,
+			'plural'             => ( isset( $entry->plural ) && '' !== $entry->plural ) ? $entry->plural : null,
+			'context'            => ( isset( $entry->context ) && '' !== $entry->context ) ? $entry->context : null,
+			'translations'       => $entry->translations,
+			'translation_status' => $entry->translation_status ? $entry->translation_status : null,
+			'extracted_comments' => $entry->extracted_comments ? $entry->extracted_comments : '',
+			'references'         => $entry->references,
+			'priority'           => isset( $entry->priority ) ? (int) $entry->priority : 0,
 		);
 	}
 }
