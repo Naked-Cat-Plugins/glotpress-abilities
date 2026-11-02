@@ -163,11 +163,14 @@ abilities listed above appear.
 | [`nakedcat-glotpress/import-originals`](#nakedcat-glotpressimport-originals) | write | Import a project's originals (source strings) from a .pot/.po file's contents |
 | [`nakedcat-glotpress/create-project`](#nakedcat-glotpresscreate-project) | write | Create a project and its translation sets, from locale slugs or a sibling project's sets |
 | [`nakedcat-glotpress/update-project`](#nakedcat-glotpressupdate-project) | write | Change a project's name, slug, description, source URL template or active flag |
+| [`nakedcat-glotpress/update-glossary-entries`](#nakedcat-glotpressupdate-glossary-entries) | write | Change existing glossary entries (translation, part of speech, comment) by ID, in batch |
+| [`nakedcat-glotpress/delete-glossary-entries`](#nakedcat-glotpressdelete-glossary-entries) | write | Delete glossary entries by ID, in batch |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
 references) → `update-translations` (submit the results) → optionally `add-glossary-entries` for
-any new terminology worth capturing for next time.
+any new terminology worth capturing for next time, and `update-glossary-entries` or
+`delete-glossary-entries` for entries that turned out wrong or outdated.
 
 `import-originals` is a separate, earlier step in a project's lifecycle: it keeps a project's
 *source strings* in sync with the plugin/theme's actual codebase (typically from release
@@ -252,6 +255,7 @@ Each `entries` item:
 
 | Field | Type | Description |
 |---|---|---|
+| `id` | integer | The entry ID, for `update-glossary-entries` and `delete-glossary-entries`. |
 | `term` | string | The term or phrase. |
 | `part_of_speech` | string | The grammatical part of speech, e.g. `noun`, `verb`. |
 | `translation` | string | The required/suggested translation for this term. |
@@ -491,6 +495,65 @@ Each `entries` item:
 | `result` | `"created"` \| `"unchanged"` \| `"error"` | What happened. |
 | `entry_id` | integer\|null | The resulting (or pre-existing, for `unchanged`) glossary entry ID, or null on error. |
 | `error_message` | string\|null | Why this item failed (including the "already exists with a different translation" case), or null if it did not. |
+
+---
+
+### `nakedcat-glotpress/update-glossary-entries`
+
+Changes existing glossary entries, addressed by the `id` that `get-glossary` returns, in a batch
+of up to 50. The scope inputs are the same as `add-glossary-entries`: the locale's **global**
+glossary by default, or with `project_path` that **project's own glossary** (never a parent's).
+Every entry ID must belong to that glossary; an ID from any other glossary is reported as an
+`error` and left alone. Nothing is created: a scope with no glossary rejects the whole call.
+
+Only `translation`, `part_of_speech` and `comment` can change; fields left out keep their value.
+The term itself cannot: a different term is a different entry, so add the new one and delete the
+old one. A part of speech change that would give the entry the same term and part of speech as
+another entry of the glossary is refused (the error names that entry's ID). Saves go through
+GlotPress's own validation and `GP_Glossary_Entry::update()`, as the glossary screen does.
+
+**Input**:
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `locale` | string | yes |  | The GlotPress locale slug, e.g. `pt`. |
+| `project_path` | string | no |  | The project whose own glossary holds the entries. Omit for the global glossary. |
+| `translation_set_slug` | string | no | `default` | The glossary's translation set variant slug. |
+| `entries` | array (1-50 items) | yes |  | Each with `entry_id` (integer, required) and any of `translation`, `part_of_speech` (same values as `add-glossary-entries`) and `comment` (an empty string removes it). |
+
+**Output**: array, one entry per input item, in order:
+
+| Field | Type | Description |
+|---|---|---|
+| `entry_id` | integer | The entry this result is for. |
+| `result` | `"updated"` \| `"unchanged"` \| `"error"` | What happened. `unchanged` when the entry already had the values submitted. |
+| `term` | string\|null | The entry's term, or null if the entry was not found in the glossary. |
+| `part_of_speech` | string\|null | The entry's part of speech after the call. |
+| `translation` | string\|null | The entry's translation after the call. |
+| `error_message` | string\|null | Why this item failed, or null if it did not. |
+
+---
+
+### `nakedcat-glotpress/delete-glossary-entries`
+
+Deletes glossary entries by the `id` that `get-glossary` returns, up to 50 per call, with the
+same scope inputs and the same rule as `update-glossary-entries`: an ID that is not in the
+resolved glossary is reported as an `error` and nothing else is touched. Deletes go through
+`GP_Glossary_Entry::delete()`, as the glossary screen does.
+
+**Input**:
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `locale` | string | yes |  | The GlotPress locale slug, e.g. `pt`. |
+| `project_path` | string | no |  | The project whose own glossary holds the entries. Omit for the global glossary. |
+| `translation_set_slug` | string | no | `default` | The glossary's translation set variant slug. |
+| `entry_ids` | array of integer (1-50 items) | yes |  | The entry IDs to delete. |
+
+**Output**: array, one entry per input ID, in order, each with `entry_id`, `result` (`"deleted"`
+or `"error"`), `term` (the deleted entry's term, or null if not found) and `error_message`.
+
+Both abilities require GlotPress admin, like `add-glossary-entries`.
 
 ---
 

@@ -123,6 +123,10 @@ class Get_Glossary {
 					'items'       => array(
 						'type'       => 'object',
 						'properties' => array(
+							'id'             => array(
+								'type'        => 'integer',
+								'description' => __( 'The glossary entry ID, for update-glossary-entries and delete-glossary-entries.', 'nakedcat-glotpress-abilities' ),
+							),
 							'term'           => array(
 								'type'        => 'string',
 								'description' => __( 'The term or phrase.', 'nakedcat-glotpress-abilities' ),
@@ -281,7 +285,7 @@ class Get_Glossary {
 	 * Formats a glossary's entries for output.
 	 *
 	 * @param \GP_Glossary|false|null $glossary The glossary, or a falsy value if none exists.
-	 * @return array<int, array<string, string>>
+	 * @return array<int, array<string, int|string>>
 	 */
 	private static function format_entries( $glossary ) {
 		if ( ! $glossary ) {
@@ -294,6 +298,7 @@ class Get_Glossary {
 
 		foreach ( $entries as $entry ) {
 			$formatted[] = array(
+				'id'             => (int) $entry->id,
 				'term'           => $entry->term,
 				'part_of_speech' => $entry->part_of_speech,
 				'translation'    => $entry->translation,
