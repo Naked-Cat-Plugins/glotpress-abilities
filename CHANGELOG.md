@@ -4,6 +4,9 @@
 * [NEW] Change a GlotPress project's name, slug, description, source code link or active status, for example to retire a discontinued plugin
 * [NEW] Edit or delete existing glossary entries, in the global glossary or a project's own one
 * [NEW] Approve or reject waiting translations in batch, open to the project's validators as well as GlotPress administrators
+* [NEW] Get strings in several statuses in one call, such as untranslated, fuzzy and waiting together
+* [FIX] Asking for strings with a combination of statuses that GlotPress cannot answer correctly now returns a clear error instead of every string in the project
+* [FIX] Asking for strings without a status now returns the untranslated ones, as documented, instead of every string in the project
 
 
 #### 0.4 - 2026-09-30

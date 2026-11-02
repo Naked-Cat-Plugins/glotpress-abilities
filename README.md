@@ -287,20 +287,26 @@ review already-translated strings for consistency.
 | `project_path` | string | yes | – | The GlotPress project path, e.g. `wp-plugins/my-plugin`. |
 | `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
 | `translation_set_slug` | string | no | `default` | The translation set variant slug. |
-| `status` | string | no | `untranslated` | A single translation status, or several joined with `_or_`. See caveat below. |
+| `status` | array of string, or string | no | `untranslated` | A list of statuses, or a single status (several joined with `_or_` work only in the combinations described below). |
 | `page` | integer | no | `1` | The page of results to return, starting at 1. |
 | `per_page` | integer | no | `50` (max `200`) | How many strings to return per page. |
 
 **`status` values**: `current`, `waiting`, `rejected`, `fuzzy`, `old`, `changesrequested`,
-`untranslated` (the original has no translation row at all).
+`untranslated` (the original has no translation, or only rejected or old ones, as GlotPress counts
+it).
 
-> **GlotPress quirk to be aware of:** a single status on its own (e.g. `untranslated`, `fuzzy`,
-> `current`) always returns accurate results. But combining `untranslated` with any other status
-> that is **not** `current` (e.g. `untranslated_or_fuzzy`) is unreliable in GlotPress's own query
-> engine and will incorrectly include already-translated strings too. To fetch multiple
-> categories of strings needing work, either make one call per status, or include `current` in
-> the combination — `current_or_waiting_or_fuzzy_or_untranslated_or_changesrequested` is safe and
-> is exactly what GlotPress's own translate editor uses by default.
+**Several statuses at once: pass a list**, e.g. `["untranslated", "fuzzy", "waiting"]`. The
+ability runs one GlotPress query per status and returns the strings in any of them, merged in the
+order of the list, each with its `translation_status` (null for untranslated). `total` and the
+pagination cover the merged result. An unknown status in the list rejects the call.
+
+**String form**: a single status, e.g. `fuzzy`, always returns accurate results. A string can also
+join statuses with `_or_` as GlotPress's own URLs do, but a combination that includes `untranslated`
+and leaves out `current` (e.g. `untranslated_or_fuzzy`) is **refused** (`WP_Error`
+`nakedcat_glotpress_unreliable_status_combination`, naming the list form to use): GlotPress's query
+answers it with every string in the project. Combinations without `untranslated` (e.g.
+`fuzzy_or_waiting`), or with `current` (e.g. `current_or_waiting_or_fuzzy_or_untranslated`, the
+default of GlotPress's own translate editor), work as before.
 
 **Output**: object:
 
