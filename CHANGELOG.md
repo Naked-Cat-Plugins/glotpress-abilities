@@ -1,3 +1,9 @@
+#### TBA
+
+* [NEW] Edit or delete existing glossary entries, in the global glossary or a project's own one
+* [TWEAK] Glossary entries now come with their ID, to edit or delete them
+
+
 #### 0.4 - 2026-09-30
 
 * [NEW] `nakedcat-glotpress/add-glossary-entries` takes an optional `project_path`, to add terms to that project's own glossary instead of the locale's global one

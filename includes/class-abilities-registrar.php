@@ -40,6 +40,8 @@ class Abilities_Registrar {
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Find_Translations_In_Other_Projects',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Add_Glossary_Entries',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Import_Originals',
+		'\NakedCatPlugins\GlotpressAbilities\Abilities\Update_Glossary_Entries',
+		'\NakedCatPlugins\GlotpressAbilities\Abilities\Delete_Glossary_Entries',
 	);
 
 	/**
@@ -60,6 +62,7 @@ class Abilities_Registrar {
 	 */
 	private function __construct() {
 		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/trait-requires-glotpress-admin.php';
+		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/trait-resolves-existing-glossary.php';
 
 		foreach ( $this->ability_classes as $ability_class ) {
 			require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/abilities/class-' . $this->class_to_filename( $ability_class ) . '.php';
