@@ -27,12 +27,14 @@ gate translation read/write actions — it deliberately does **not** also requir
 coordinator can administer GlotPress (and use these abilities) without needing full WordPress
 site administration rights.
 
-The one exception is `create-project`, which applies the same check as GlotPress's own "New
-project" screen instead: GlotPress `write` permission on the parent project
+The exceptions are `create-project` and `update-project`. `create-project` applies the same check
+as GlotPress's own "New project" screen instead: GlotPress `write` permission on the parent project
 (`GP::$permission->current_user_can('write', 'project', $parent_id)`). GlotPress administrators
 always have it; other users have it when they were given `write` on that project or one of its
 ancestors. A top-level project needs GlotPress admin (or a global `write` permission), as in the
-UI. Every other ability, read or write, requires GlotPress admin.
+UI. `update-project` applies the project edit screen's check: GlotPress `write` on the project
+itself, which anyone with `write` on its parent (or the project, or any ancestor) has.
+Every other ability, read or write, requires GlotPress admin.
 
 ## Connecting Claude to these abilities
 
@@ -145,7 +147,7 @@ claude mcp list          # should show glotpress-mcp as ✔ Connected
 ```
 
 Then, in a Claude Code session connected to this MCP server, ask it to discover abilities (it
-will call the `mcp-adapter-discover-abilities` tool) and confirm the eight `nakedcat-glotpress/*`
+will call the `mcp-adapter-discover-abilities` tool) and confirm the nine `nakedcat-glotpress/*`
 abilities listed above appear.
 
 ## Abilities
@@ -160,6 +162,7 @@ abilities listed above appear.
 | [`nakedcat-glotpress/add-glossary-entries`](#nakedcat-glotpressadd-glossary-entries) | write | Add terms to a locale's global glossary, or to one project's glossary, in batch |
 | [`nakedcat-glotpress/import-originals`](#nakedcat-glotpressimport-originals) | write | Import a project's originals (source strings) from a .pot/.po file's contents |
 | [`nakedcat-glotpress/create-project`](#nakedcat-glotpresscreate-project) | write | Create a project and its translation sets, from locale slugs or a sibling project's sets |
+| [`nakedcat-glotpress/update-project`](#nakedcat-glotpressupdate-project) | write | Change a project's name, slug, description, source URL template or active flag |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
@@ -609,3 +612,37 @@ screen (see [Permission model](#permission-model)), not GlotPress admin.
 | `name` | string | The new project's name. |
 | `active` | boolean | Whether the new project is active. |
 | `translation_sets` | array | The sets created, each with `id`, `locale`, `slug` and `name`. |
+
+---
+
+### `nakedcat-glotpress/update-project`
+
+Changes a project's settings, the ones GlotPress's project edit screen changes except the parent:
+`name`, `slug`, `description`, `source_url_template` (so string references link to the
+repository) and `active`. Fields left out keep their value. Saves go through `GP_Project::save()`,
+like the edit screen, so GlotPress's hooks run.
+
+- A **slug** change moves the project to a new path (its sub projects move with it), returned in
+  `project_path` next to `previous_path`. It is refused (`WP_Error`, nothing changed) if another
+  project already has the new path.
+- **`active: false`** retires a project, for example a discontinued plugin's, without deleting its
+  originals or translations: they stay readable through every ability.
+
+**Permission**: GlotPress `write` on the project, as the edit screen requires (see
+[Permission model](#permission-model)), not GlotPress admin.
+
+**Input**:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `project_path` | string | yes | The project to change, e.g. `wp-plugins/my-plugin`. |
+| `name` | string | no | The new display name. |
+| `slug` | string | no | The new slug, sanitized the way GlotPress does it. |
+| `description` | string | no | The new description; an empty string removes it. |
+| `source_url_template` | string | no | The new source URL template, with `%file%` and `%line%` placeholders; an empty string removes it. |
+| `active` | boolean | no | Whether the project is active. |
+
+**Output**: object with the project's settings after the call: `project_id`, `project_path`,
+`previous_path`, `name`, `slug`, `description`, `source_url_template`, `active`, and
+`changed_fields` (the fields this call actually changed; empty if everything already had the values
+submitted).
