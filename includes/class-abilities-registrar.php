@@ -44,6 +44,7 @@ class Abilities_Registrar {
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Update_Project',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Update_Glossary_Entries',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Delete_Glossary_Entries',
+		'\NakedCatPlugins\GlotpressAbilities\Abilities\Review_Translations',
 	);
 
 	/**

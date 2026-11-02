@@ -27,13 +27,20 @@ gate translation read/write actions — it deliberately does **not** also requir
 coordinator can administer GlotPress (and use these abilities) without needing full WordPress
 site administration rights.
 
-The exceptions are `create-project` and `update-project`. `create-project` applies the same check
-as GlotPress's own "New project" screen instead: GlotPress `write` permission on the parent project
-(`GP::$permission->current_user_can('write', 'project', $parent_id)`). GlotPress administrators
-always have it; other users have it when they were given `write` on that project or one of its
-ancestors. A top-level project needs GlotPress admin (or a global `write` permission), as in the
-UI. `update-project` applies the project edit screen's check: GlotPress `write` on the project
-itself, which anyone with `write` on its parent (or the project, or any ancestor) has.
+The exceptions are `create-project`, `update-project` and `review-translations`. `create-project`
+applies the same check as GlotPress's own "New project" screen instead: GlotPress `write` permission
+on the parent project (`GP::$permission->current_user_can('write', 'project', $parent_id)`).
+GlotPress administrators always have it; other users have it when they were given `write` on that
+project or one of its ancestors. A top-level project needs GlotPress admin (or a global `write`
+permission), as in the UI. `update-project` applies the project edit screen's check: GlotPress
+`write` on the project itself, which anyone with `write` on its parent (or the project, or any
+ancestor) has.
+
+`review-translations` applies GlotPress's own review permission instead: `approve` on every
+translation set the call touches (`GP::$permission->current_user_can('approve', 'translation-set',
+$set_id)`), so the validators of a project, locale and set can review its translations without being
+GlotPress administrators.
+
 Every other ability, read or write, requires GlotPress admin.
 
 ## Connecting Claude to these abilities
@@ -147,7 +154,7 @@ claude mcp list          # should show glotpress-mcp as ✔ Connected
 ```
 
 Then, in a Claude Code session connected to this MCP server, ask it to discover abilities (it
-will call the `mcp-adapter-discover-abilities` tool) and confirm the nine `nakedcat-glotpress/*`
+will call the `mcp-adapter-discover-abilities` tool) and confirm the twelve `nakedcat-glotpress/*`
 abilities listed above appear.
 
 ## Abilities
@@ -165,6 +172,7 @@ abilities listed above appear.
 | [`nakedcat-glotpress/update-project`](#nakedcat-glotpressupdate-project) | write | Change a project's name, slug, description, source URL template or active flag |
 | [`nakedcat-glotpress/update-glossary-entries`](#nakedcat-glotpressupdate-glossary-entries) | write | Change existing glossary entries (translation, part of speech, comment) by ID, in batch |
 | [`nakedcat-glotpress/delete-glossary-entries`](#nakedcat-glotpressdelete-glossary-entries) | write | Delete glossary entries by ID, in batch |
+| [`nakedcat-glotpress/review-translations`](#nakedcat-glotpressreview-translations) | write | Approve or reject waiting translations, in batch |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
@@ -652,6 +660,29 @@ sets, the project is deleted again, so a failed call never leaves a half-created
 
 **Permission**: GlotPress `write` on the parent project, the same check as GlotPress's "New project"
 screen (see [Permission model](#permission-model)), not GlotPress admin.
+### `nakedcat-glotpress/review-translations`
+
+Approves or rejects **waiting** translations in batch (up to 100 reviews), the way translations are
+reviewed after a release. Each review goes through `GP_Translation::set_status()`, the same call
+as the approve and reject buttons of GlotPress's translate screen: approving makes the translation
+current and demotes that original's previous current, waiting, fuzzy and changes-requested
+translations in the set to `old`, exactly as in the UI.
+
+A review names its translation either by `translation_id` (as `get-strings` returns it), or by
+`original_id` together with the top-level `project_path` and `locale`, which picks that original's
+waiting translation in the set (refused when the original has several waiting translations, with
+their IDs in the error).
+
+**Only waiting translations are reviewed.** A translation in any other status (fuzzy, old,
+current, rejected) is reported as an `error` and left untouched, so an old or fuzzy translation is
+never approved by mistake.
+
+**Rejection reason**: GlotPress core has no review feedback channel, so a `reason` given with a
+rejection is kept as GlotPress meta on the translation (`nakedcat_rejection_reason`) and returned
+in the result.
+
+**Permission**: GlotPress `approve` on every translation set the call touches (see
+[Permission model](#permission-model)), not GlotPress admin.
 
 **Input**:
 
@@ -709,3 +740,18 @@ like the edit screen, so GlotPress's hooks run.
 `previous_path`, `name`, `slug`, `description`, `source_url_template`, `active`, and
 `changed_fields` (the fields this call actually changed; empty if everything already had the values
 submitted).
+| `project_path` | string | for `original_id` reviews |  | The project, e.g. `wp-plugins/my-plugin`. |
+| `locale` | string | for `original_id` reviews |  | The locale slug, e.g. `pt`. |
+| `translation_set_slug` | string | no | `default` | The translation set variant slug, for `original_id` reviews. |
+| `reviews` | array (1-100 items) | yes |  | Each with `action` (`approve` or `reject`, required), `translation_id` or `original_id`, and an optional `reason` for rejections. |
+
+**Output**: array, one entry per review, in order:
+
+| Field | Type | Description |
+|---|---|---|
+| `translation_id` | integer\|null | The translation reviewed, or null if none was found. |
+| `original_id` | integer\|null | Its original. |
+| `result` | `"approved"` \| `"rejected"` \| `"error"` | What happened. |
+| `status` | string\|null | The translation's status after the call. |
+| `reason` | string\|null | The rejection reason kept with the translation, or null. |
+| `error_message` | string\|null | Why this review failed, or null if it did not. |
