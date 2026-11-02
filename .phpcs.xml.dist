@@ -35,6 +35,11 @@
 		<exclude name="WordPress.PHP.YodaConditions.NotYoda"/>
 	</rule>
 
+	<!-- PHPUnit test files are named after their class, as PHPUnit expects. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>/tests/*</exclude-pattern>
+	</rule>
+
 	<!-- Textdomain -->
 	<rule ref="WordPress.WP.I18n">
 		<properties>
