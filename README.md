@@ -25,9 +25,14 @@ This trusts GlotPress's own permission system alone, matching how GlotPress core
 gate translation read/write actions — it deliberately does **not** also require the WordPress
 `manage_options` capability. GlotPress's permission model exists precisely so a translation
 coordinator can administer GlotPress (and use these abilities) without needing full WordPress
-site administration rights. There is currently no ability with a lighter permission requirement
-(e.g. for ordinary translators without GlotPress admin/validator status) — every ability, read or
-write, requires GlotPress admin.
+site administration rights.
+
+The one exception is `create-project`, which applies the same check as GlotPress's own "New
+project" screen instead: GlotPress `write` permission on the parent project
+(`GP::$permission->current_user_can('write', 'project', $parent_id)`). GlotPress administrators
+always have it; other users have it when they were given `write` on that project or one of its
+ancestors. A top-level project needs GlotPress admin (or a global `write` permission), as in the
+UI. Every other ability, read or write, requires GlotPress admin.
 
 ## Connecting Claude to these abilities
 
@@ -140,7 +145,7 @@ claude mcp list          # should show glotpress-mcp as ✔ Connected
 ```
 
 Then, in a Claude Code session connected to this MCP server, ask it to discover abilities (it
-will call the `mcp-adapter-discover-abilities` tool) and confirm the seven `nakedcat-glotpress/*`
+will call the `mcp-adapter-discover-abilities` tool) and confirm the eight `nakedcat-glotpress/*`
 abilities listed above appear.
 
 ## Abilities
@@ -154,6 +159,7 @@ abilities listed above appear.
 | [`nakedcat-glotpress/find-translations-in-other-projects`](#nakedcat-glotpressfind-translations-in-other-projects) | read | Cross-project translation-memory lookup for terminology consistency |
 | [`nakedcat-glotpress/add-glossary-entries`](#nakedcat-glotpressadd-glossary-entries) | write | Add terms to a locale's global glossary, or to one project's glossary, in batch |
 | [`nakedcat-glotpress/import-originals`](#nakedcat-glotpressimport-originals) | write | Import a project's originals (source strings) from a .pot/.po file's contents |
+| [`nakedcat-glotpress/create-project`](#nakedcat-glotpresscreate-project) | write | Create a project and its translation sets, from locale slugs or a sibling project's sets |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
@@ -162,7 +168,8 @@ any new terminology worth capturing for next time.
 
 `import-originals` is a separate, earlier step in a project's lifecycle: it keeps a project's
 *source strings* in sync with the plugin/theme's actual codebase (typically from release
-automation), independent of any locale or translation work.
+automation), independent of any locale or translation work. `create-project` comes before both: create a new
+plugin's project with the same translation sets as its siblings, then `import-originals` its `.pot`.
 
 ---
 
@@ -552,3 +559,53 @@ here is called.
 Rejects the whole call (`WP_Error`) if `project_path` doesn't resolve to a project, if
 `pot_content` is empty, or if `pot_content` can't be parsed as a valid PO/POT file — there's no
 per-item result list here, since this is a single-file operation rather than a batch of items.
+
+---
+
+### `nakedcat-glotpress/create-project`
+
+Creates a GlotPress project, optionally under a parent project, together with its translation
+sets, through GlotPress's own API (`GP::$project->create_and_select()`,
+`GP::$translation_set->create_and_select()`), so GlotPress's hooks and caches behave as in the UI.
+
+The translation sets come from one of two inputs, never both:
+
+- `locales`: a list of GlotPress locale slugs, each getting a `default` translation set named after
+  the locale's English name.
+- `copy_sets_from`: the path of an existing project, typically a sibling, whose sets (locale,
+  variant slug and name) are created on the new project, the same way GlotPress's own "Mass-create
+  translation sets" screen does it. Translations are not copied.
+
+Omit both to create the project with no translation sets.
+
+**Never overwrites anything.** Every check runs before anything is written, and the whole call is
+rejected (`WP_Error`) when a project already exists at the resulting path, when
+`parent_project_path` or `copy_sets_from` does not resolve to a project, or when any locale slug is
+not a GlotPress locale (the error lists every unknown slug). If GlotPress fails to create one of the
+sets, the project is deleted again, so a failed call never leaves a half-created project behind.
+
+**Permission**: GlotPress `write` on the parent project, the same check as GlotPress's "New project"
+screen (see [Permission model](#permission-model)), not GlotPress admin.
+
+**Input**:
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | The project's display name. |
+| `slug` | string | yes |  | The last segment of the project's path. Sanitized the way GlotPress does it (lowercase, no accents or special characters); the resulting path is returned. |
+| `parent_project_path` | string | no |  | The existing project to create this one under, e.g. `wp-plugins`. Omit for a top-level project. |
+| `description` | string | no |  | Project description, shown on the project page. |
+| `source_url_template` | string | no |  | URL template for linking string references to the source code, with `%file%` and `%line%` placeholders. |
+| `active` | boolean | no | `true` | Whether the project is active. |
+| `locales` | array of string | no |  | Locale slugs to create a `default` set for, e.g. `["pt", "pt-ao90", "pt-br"]`. |
+| `copy_sets_from` | string | no |  | The path of a project whose translation sets to copy, e.g. `wp-plugins/my-other-plugin`. |
+
+**Output**: object:
+
+| Field | Type | Description |
+|---|---|---|
+| `project_id` | integer | The new project's ID. |
+| `project_path` | string | The new project's path, as used by every other ability. |
+| `name` | string | The new project's name. |
+| `active` | boolean | Whether the new project is active. |
+| `translation_sets` | array | The sets created, each with `id`, `locale`, `slug` and `name`. |

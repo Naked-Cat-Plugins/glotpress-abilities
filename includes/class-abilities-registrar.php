@@ -40,6 +40,7 @@ class Abilities_Registrar {
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Find_Translations_In_Other_Projects',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Add_Glossary_Entries',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Import_Originals',
+		'\NakedCatPlugins\GlotpressAbilities\Abilities\Create_Project',
 	);
 
 	/**
