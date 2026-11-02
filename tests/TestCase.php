@@ -112,7 +112,8 @@ abstract class Nakedcat_Glotpress_Abilities_TestCase extends NakedCat_Tests_Test
 	}
 
 	/**
-	 * Deletes whatever project is at a path in tearDown(), with its sets, originals and sub projects.
+	 * Deletes whatever project is at a path in tearDown(), with its sub projects and everything
+	 * GlotPress keeps for them: sets, translations, glossaries, originals and their meta.
 	 *
 	 * @param string $path Project path.
 	 */
@@ -120,14 +121,113 @@ abstract class Nakedcat_Glotpress_Abilities_TestCase extends NakedCat_Tests_Test
 		$this->on_teardown(
 			function () use ( $path ) {
 				$project = GP::$project->by_path( $path );
-				if ( $project ) {
-					foreach ( $project->inclusive_sub_projects() as $sub ) {
-						$sub->delete();
-					}
-					$project->delete();
+				if ( ! $project ) {
+					return;
+				}
+				foreach ( array_merge( $project->inclusive_sub_projects(), array( $project ) ) as $doomed ) {
+					self::purge_project_rows( $doomed );
+					$doomed->delete();
 				}
 			}
 		);
+	}
+
+	/**
+	 * Deletes the rows GP_Project::delete() leaves behind: translations, glossaries, entries, meta.
+	 *
+	 * @param GP_Project $project The project about to be deleted.
+	 */
+	private static function purge_project_rows( $project ) {
+		global $wpdb;
+		foreach ( (array) GP::$translation_set->by_project_id( $project->id ) as $set ) {
+			GP::$translation->delete_many( array( 'translation_set_id' => $set->id ) );
+			$glossary = GP::$glossary->by_set_id( $set->id );
+			if ( $glossary ) {
+				GP::$glossary_entry->delete_many( array( 'glossary_id' => $glossary->id ) );
+				$glossary->delete();
+			}
+		}
+		foreach ( (array) GP::$original->find_many( array( 'project_id' => $project->id ) ) as $original ) {
+			$wpdb->delete( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				$wpdb->gp_meta,
+				array(
+					'object_type' => 'original',
+					'object_id'   => $original->id,
+				)
+			);
+			wp_cache_delete( $original->id, 'original' );
+		}
+		$wpdb->delete( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$wpdb->gp_meta,
+			array(
+				'object_type' => 'project',
+				'object_id'   => $project->id,
+			)
+		);
+		wp_cache_delete( $project->id, 'project' );
+	}
+
+	/**
+	 * Imports originals into a project through GlotPress's own importer.
+	 *
+	 * @param GP_Project $project   The project.
+	 * @param array      $originals Singular strings, or arrays of Translation_Entry fields.
+	 * @return array Added, existing, fuzzied, obsoleted, error counts, as import_for_project() returns.
+	 */
+	protected function import_originals( $project, $originals ) {
+		$translations = new Translations();
+		foreach ( $originals as $original ) {
+			$translations->add_entry( new Translation_Entry( is_array( $original ) ? $original : array( 'singular' => $original ) ) );
+		}
+		return GP::$original->import_for_project( $project, $translations );
+	}
+
+	/**
+	 * The active original of a project with a given singular.
+	 *
+	 * @param GP_Project $project  The project.
+	 * @param string     $singular The singular.
+	 * @return GP_Original
+	 */
+	protected function original( $project, $singular ) {
+		$original = GP::$original->find_one(
+			array(
+				'project_id' => $project->id,
+				'singular'   => $singular,
+				'status'     => '+active',
+			)
+		);
+		$this->assertInstanceOf( GP_Original::class, $original, "No active original \"{$singular}\"." );
+		return $original;
+	}
+
+	/**
+	 * A translation row, written directly (deleted with the project).
+	 *
+	 * @param GP_Translation_Set $set         The translation set.
+	 * @param GP_Original        $original    The original.
+	 * @param string             $text        The translation.
+	 * @param string             $status      The status.
+	 * @param int                $user_id     The translator.
+	 * @param string|null        $date_added  The date added (GMT, MySQL format), now when null.
+	 * @return GP_Translation
+	 */
+	protected function make_translation( $set, $original, $text, $status = 'current', $user_id = 0, $date_added = null ) {
+		$translation = GP::$translation->create(
+			array(
+				'original_id'        => $original->id,
+				'translation_set_id' => $set->id,
+				'translation_0'      => $text,
+				'status'             => $status,
+				'user_id'            => $user_id,
+			)
+		);
+		$this->assertInstanceOf( GP_Translation::class, $translation, 'Could not create the test translation.' );
+		if ( $date_added ) {
+			GP::$translation->update( array( 'date_added' => $date_added ), array( 'id' => $translation->id ) );
+		}
+		gp_clean_translation_set_cache( $set->id );
+		return GP::$translation->get( $translation->id );
 	}
 
 	/**
