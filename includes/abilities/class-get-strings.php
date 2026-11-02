@@ -92,6 +92,15 @@ class Get_Strings {
 					'description' => __( 'Return only stale waiting translations: waiting strings whose original was reworded by an originals import after the translation was submitted, so the translation describes text that no longer exists. Replaces the status filter (stale strings are always waiting).', 'nakedcat-glotpress-abilities' ),
 					'default'     => false,
 				),
+				'changed_since'        => array(
+					'type'        => 'string',
+					'description' => __( 'Return only originals added or reworded since this date, e.g. "2026-10-01" or "2026-10-01 14:30:00" (GMT unless a timezone is given), each marked "added" or "changed". Combines with status, e.g. new originals still untranslated. Cannot be combined with since_import.', 'nakedcat-glotpress-abilities' ),
+				),
+				'since_import'         => array(
+					'type'        => 'boolean',
+					'description' => __( 'Return only the originals the most recent originals import into this project added or reworded, each marked "added" or "changed". Combines with status. Cannot be combined with changed_since.', 'nakedcat-glotpress-abilities' ),
+					'default'     => false,
+				),
 				'page'                 => array(
 					'type'        => 'integer',
 					'description' => __( 'The page of results to return, starting at 1.', 'nakedcat-glotpress-abilities' ),
@@ -131,6 +140,10 @@ class Get_Strings {
 				'per_page' => array(
 					'type'        => 'integer',
 					'description' => __( 'How many strings were returned per page.', 'nakedcat-glotpress-abilities' ),
+				),
+				'since'    => array(
+					'type'        => array( 'string', 'null' ),
+					'description' => __( 'With changed_since or since_import: the GMT date originals were compared against (for since_import, when that import started). Null otherwise.', 'nakedcat-glotpress-abilities' ),
 				),
 				'strings'  => array(
 					'type'        => 'array',
@@ -184,6 +197,11 @@ class Get_Strings {
 								'type'        => 'boolean',
 								'description' => __( 'True for a waiting translation whose original was reworded by an originals import after the translation was submitted: review it against the new text before approving. Always false for other statuses. Only rewordings recorded since this plugin started tracking them are known.', 'nakedcat-glotpress-abilities' ),
 							),
+							'change'             => array(
+								'type'        => array( 'string', 'null' ),
+								'enum'        => array( 'added', 'changed', null ),
+								'description' => __( 'With changed_since or since_import: "added" for an original added since then, "changed" for one reworded since then. Null otherwise.', 'nakedcat-glotpress-abilities' ),
+							),
 						),
 					),
 				),
@@ -209,6 +227,34 @@ class Get_Strings {
 		$page                 = ! empty( $input['page'] ) ? max( 1, (int) $input['page'] ) : 1;
 		$per_page             = ! empty( $input['per_page'] ) ? min( self::MAX_PER_PAGE, max( 1, (int) $input['per_page'] ) ) : 50;
 		$stale_only           = ! empty( $input['stale_only'] );
+		$changed_since        = isset( $input['changed_since'] ) ? trim( (string) $input['changed_since'] ) : '';
+		$since_import         = ! empty( $input['since_import'] );
+
+		if ( '' !== $changed_since && $since_import ) {
+			return new \WP_Error(
+				'nakedcat_glotpress_conflicting_since_input',
+				__( 'Pass either changed_since or since_import, not both.', 'nakedcat-glotpress-abilities' )
+			);
+		}
+
+		$since = null;
+
+		if ( '' !== $changed_since ) {
+			$timestamp = strtotime( $changed_since );
+
+			if ( false === $timestamp ) {
+				return new \WP_Error(
+					'nakedcat_glotpress_invalid_date',
+					sprintf(
+						/* translators: %s: the date submitted. */
+						__( 'changed_since "%s" is not a date.', 'nakedcat-glotpress-abilities' ),
+						$changed_since
+					)
+				);
+			}
+
+			$since = gmdate( 'Y-m-d H:i:s', $timestamp );
+		}
 
 		$project = \GP::$project->by_path( $project_path );
 
@@ -249,6 +295,23 @@ class Get_Strings {
 			);
 		}
 
+		if ( $since_import ) {
+			$last_import = \NakedCatPlugins\GlotpressAbilities\Original_History::last_import( $project->id );
+
+			if ( ! $last_import ) {
+				return new \WP_Error(
+					'nakedcat_glotpress_no_import_recorded',
+					sprintf(
+						/* translators: %s: GlotPress project path. */
+						__( 'No originals import into "%s" has been recorded since this plugin started tracking them. Use changed_since with the date of the previous release instead.', 'nakedcat-glotpress-abilities' ),
+						$project_path
+					)
+				);
+			}
+
+			$since = $last_import['started'];
+		}
+
 		if ( $stale_only ) {
 			$entries = array_values(
 				array_filter(
@@ -258,6 +321,9 @@ class Get_Strings {
 					}
 				)
 			);
+			if ( null !== $since ) {
+				$entries = self::changed_entries( $entries, $since );
+			}
 			$total   = count( $entries );
 			$entries = array_slice( $entries, ( $page - 1 ) * $per_page, $per_page );
 		} elseif ( is_array( $status ) ) {
@@ -277,6 +343,9 @@ class Get_Strings {
 			}
 
 			$entries = self::with_stale_flags( self::entries_for_statuses( $project, $translation_set, $statuses ) );
+			if ( null !== $since ) {
+				$entries = self::changed_entries( $entries, $since );
+			}
 			$total   = count( $entries );
 			$entries = array_slice( $entries, ( $page - 1 ) * $per_page, $per_page );
 		} else {
@@ -298,10 +367,16 @@ class Get_Strings {
 				);
 			}
 
-			\GP::$translation->per_page = $per_page;
+			if ( null !== $since ) {
+				$entries = self::changed_entries( self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array( 'status' => $status ) ) ), $since );
+				$total   = count( $entries );
+				$entries = array_slice( $entries, ( $page - 1 ) * $per_page, $per_page );
+			} else {
+				\GP::$translation->per_page = $per_page;
 
-			$entries = self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, $page, array( 'status' => $status ) ) );
-			$total   = (int) \GP::$translation->found_rows;
+				$entries = self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, $page, array( 'status' => $status ) ) );
+				$total   = (int) \GP::$translation->found_rows;
+			}
 		}
 
 		$strings = array();
@@ -314,6 +389,7 @@ class Get_Strings {
 			'total'    => $total,
 			'page'     => $page,
 			'per_page' => $per_page,
+			'since'    => $since,
 			'strings'  => $strings,
 		);
 	}
@@ -369,6 +445,7 @@ class Get_Strings {
 			'references'         => $entry->references,
 			'priority'           => isset( $entry->priority ) ? (int) $entry->priority : 0,
 			'stale'              => ! empty( $entry->nakedcat_stale ),
+			'change'             => isset( $entry->nakedcat_change ) ? $entry->nakedcat_change : null,
 		);
 	}
 
@@ -400,5 +477,34 @@ class Get_Strings {
 		}
 
 		return $entries;
+	}
+
+	/**
+	 * Keeps the entries whose original was added or reworded at or after a date, marking each
+	 * with nakedcat_change ("added" wins when both apply).
+	 *
+	 * @param object[] $entries GlotPress entries, as GP_Translation::for_translation() returns them.
+	 * @param string   $since   GMT date, MySQL format.
+	 * @return object[]
+	 */
+	private static function changed_entries( $entries, $since ) {
+		$reworded_at = \NakedCatPlugins\GlotpressAbilities\Original_History::reworded_at( wp_list_pluck( $entries, 'original_id' ) );
+		$changed     = array();
+
+		foreach ( $entries as $entry ) {
+			$original_id = (int) $entry->original_id;
+
+			if ( ! empty( $entry->original_added ) && $entry->original_added >= $since ) {
+				$entry->nakedcat_change = 'added';
+			} elseif ( isset( $reworded_at[ $original_id ] ) && $reworded_at[ $original_id ] >= $since ) {
+				$entry->nakedcat_change = 'changed';
+			} else {
+				continue;
+			}
+
+			$changed[] = $entry;
+		}
+
+		return $changed;
 	}
 }

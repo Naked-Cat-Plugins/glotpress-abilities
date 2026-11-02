@@ -6,6 +6,7 @@
 * [NEW] Approve or reject waiting translations in batch, open to the project's validators as well as GlotPress administrators
 * [NEW] Get strings in several statuses in one call, such as untranslated, fuzzy and waiting together
 * [NEW] Waiting translations whose English text was reworded after they were submitted are flagged as stale, and can be listed on their own
+* [NEW] List only the strings added or reworded since a date or since the last originals import, to translate just what changed in a release
 * [FIX] Asking for strings with a combination of statuses that GlotPress cannot answer correctly now returns a clear error instead of every string in the project
 * [FIX] Asking for strings without a status now returns the untranslated ones, as documented, instead of every string in the project
 
