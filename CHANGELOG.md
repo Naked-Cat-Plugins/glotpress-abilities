@@ -1,3 +1,8 @@
+#### TBA
+
+* [NEW] Approve or reject waiting translations in batch, open to the project's validators as well as GlotPress administrators
+
+
 #### 0.4 - 2026-09-30
 
 * [NEW] `nakedcat-glotpress/add-glossary-entries` takes an optional `project_path`, to add terms to that project's own glossary instead of the locale's global one

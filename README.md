@@ -25,9 +25,13 @@ This trusts GlotPress's own permission system alone, matching how GlotPress core
 gate translation read/write actions — it deliberately does **not** also require the WordPress
 `manage_options` capability. GlotPress's permission model exists precisely so a translation
 coordinator can administer GlotPress (and use these abilities) without needing full WordPress
-site administration rights. There is currently no ability with a lighter permission requirement
-(e.g. for ordinary translators without GlotPress admin/validator status) — every ability, read or
-write, requires GlotPress admin.
+site administration rights.
+
+The one exception is `review-translations`, which applies GlotPress's own review permission
+instead: `approve` on every translation set the call touches
+(`GP::$permission->current_user_can('approve', 'translation-set', $set_id)`), so the validators of
+a project, locale and set can review its translations without being GlotPress administrators.
+Every other ability, read or write, requires GlotPress admin.
 
 ## Connecting Claude to these abilities
 
@@ -140,7 +144,7 @@ claude mcp list          # should show glotpress-mcp as ✔ Connected
 ```
 
 Then, in a Claude Code session connected to this MCP server, ask it to discover abilities (it
-will call the `mcp-adapter-discover-abilities` tool) and confirm the seven `nakedcat-glotpress/*`
+will call the `mcp-adapter-discover-abilities` tool) and confirm the eight `nakedcat-glotpress/*`
 abilities listed above appear.
 
 ## Abilities
@@ -154,6 +158,7 @@ abilities listed above appear.
 | [`nakedcat-glotpress/find-translations-in-other-projects`](#nakedcat-glotpressfind-translations-in-other-projects) | read | Cross-project translation-memory lookup for terminology consistency |
 | [`nakedcat-glotpress/add-glossary-entries`](#nakedcat-glotpressadd-glossary-entries) | write | Add terms to a locale's global glossary, or to one project's glossary, in batch |
 | [`nakedcat-glotpress/import-originals`](#nakedcat-glotpressimport-originals) | write | Import a project's originals (source strings) from a .pot/.po file's contents |
+| [`nakedcat-glotpress/review-translations`](#nakedcat-glotpressreview-translations) | write | Approve or reject waiting translations, in batch |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
@@ -552,3 +557,49 @@ here is called.
 Rejects the whole call (`WP_Error`) if `project_path` doesn't resolve to a project, if
 `pot_content` is empty, or if `pot_content` can't be parsed as a valid PO/POT file — there's no
 per-item result list here, since this is a single-file operation rather than a batch of items.
+
+---
+
+### `nakedcat-glotpress/review-translations`
+
+Approves or rejects **waiting** translations in batch (up to 100 reviews), the way translations are
+reviewed after a release. Each review goes through `GP_Translation::set_status()`, the same call
+as the approve and reject buttons of GlotPress's translate screen: approving makes the translation
+current and demotes that original's previous current, waiting, fuzzy and changes-requested
+translations in the set to `old`, exactly as in the UI.
+
+A review names its translation either by `translation_id` (as `get-strings` returns it), or by
+`original_id` together with the top-level `project_path` and `locale`, which picks that original's
+waiting translation in the set (refused when the original has several waiting translations, with
+their IDs in the error).
+
+**Only waiting translations are reviewed.** A translation in any other status (fuzzy, old,
+current, rejected) is reported as an `error` and left untouched, so an old or fuzzy translation is
+never approved by mistake.
+
+**Rejection reason**: GlotPress core has no review feedback channel, so a `reason` given with a
+rejection is kept as GlotPress meta on the translation (`nakedcat_rejection_reason`) and returned
+in the result.
+
+**Permission**: GlotPress `approve` on every translation set the call touches (see
+[Permission model](#permission-model)), not GlotPress admin.
+
+**Input**:
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `project_path` | string | for `original_id` reviews |  | The project, e.g. `wp-plugins/my-plugin`. |
+| `locale` | string | for `original_id` reviews |  | The locale slug, e.g. `pt`. |
+| `translation_set_slug` | string | no | `default` | The translation set variant slug, for `original_id` reviews. |
+| `reviews` | array (1-100 items) | yes |  | Each with `action` (`approve` or `reject`, required), `translation_id` or `original_id`, and an optional `reason` for rejections. |
+
+**Output**: array, one entry per review, in order:
+
+| Field | Type | Description |
+|---|---|---|
+| `translation_id` | integer\|null | The translation reviewed, or null if none was found. |
+| `original_id` | integer\|null | Its original. |
+| `result` | `"approved"` \| `"rejected"` \| `"error"` | What happened. |
+| `status` | string\|null | The translation's status after the call. |
+| `reason` | string\|null | The rejection reason kept with the translation, or null. |
+| `error_message` | string\|null | Why this review failed, or null if it did not. |
