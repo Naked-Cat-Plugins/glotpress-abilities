@@ -1,0 +1,5 @@
+{
+	"plugin": "nakedcat-glotpress-abilities",
+	"activate": [ "glotpress" ],
+	"woocommerce": false
+}
