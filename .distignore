@@ -34,3 +34,10 @@ createzip.command
 .assets
 README.md
 CHANGELOG.md
+
+# PHPUnit tests (run with the shared nakedcat-plugin-tests library)
+phpunit.xml.dist
+tests/*
+tests
+.phpunit.cache/*
+.phpunit.cache

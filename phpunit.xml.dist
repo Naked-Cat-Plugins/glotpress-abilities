@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Run through ~/.claude/skills/nakedcat-plugin-tests/bin/run-tests.sh -->
+<phpunit
+	bootstrap="tests/bootstrap.php"
+	colors="true"
+	beStrictAboutTestsThatDoNotTestAnything="true"
+	failOnWarning="true"
+	failOnNotice="true"
+	cacheDirectory=".phpunit.cache"
+	>
+	<testsuites>
+		<testsuite name="nakedcat-glotpress-abilities">
+			<directory suffix="Test.php">tests</directory>
+		</testsuite>
+	</testsuites>
+</phpunit>
