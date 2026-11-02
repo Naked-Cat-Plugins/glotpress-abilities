@@ -60,6 +60,9 @@ class Abilities_Registrar {
 	 */
 	private function __construct() {
 		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/trait-requires-glotpress-admin.php';
+		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/class-original-history.php';
+
+		Original_History::register_hooks();
 
 		foreach ( $this->ability_classes as $ability_class ) {
 			require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/abilities/class-' . $this->class_to_filename( $ability_class ) . '.php';
