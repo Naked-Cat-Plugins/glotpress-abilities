@@ -1,3 +1,8 @@
+#### TBA
+
+* [NEW] List only the strings added or reworded since a date or since the last originals import, to translate just what changed in a release
+
+
 #### 0.4 - 2026-09-30
 
 * [NEW] `nakedcat-glotpress/add-glossary-entries` takes an optional `project_path`, to add terms to that project's own glossary instead of the locale's global one

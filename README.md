@@ -266,6 +266,8 @@ review already-translated strings for consistency.
 | `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
 | `translation_set_slug` | string | no | `default` | The translation set variant slug. |
 | `status` | string | no | `untranslated` | A single translation status, or several joined with `_or_`. See caveat below. |
+| `changed_since` | string | no |  | Only originals added or reworded since this date, e.g. `2026-10-01` or `2026-10-01 14:30:00` (GMT unless a timezone is given). See below. |
+| `since_import` | boolean | no | `false` | Only the originals the most recent originals import into the project added or reworded. See below. |
 | `page` | integer | no | `1` | The page of results to return, starting at 1. |
 | `per_page` | integer | no | `50` (max `200`) | How many strings to return per page. |
 
@@ -287,6 +289,7 @@ review already-translated strings for consistency.
 | `total` | integer | Total number of matching strings across all pages. |
 | `page` | integer | The page of results returned. |
 | `per_page` | integer | How many strings were returned per page. |
+| `since` | string\|null | With `changed_since` or `since_import`: the GMT date originals were compared against (for `since_import`, when that import started). Null otherwise. |
 | `strings` | array | The matching strings for this page; see below. |
 
 Each `strings` item:
@@ -303,6 +306,21 @@ Each `strings` item:
 | `extracted_comments` | string | Developer/translator context comment for this string, if any. |
 | `references` | array of string | Source locations (`file:line`) where this string is used, if known. |
 | `priority` | integer | The original's priority: `-2` hidden, `-1` low, `0` normal, `1` high. |
+| `change` | `"added"` \| `"changed"` \| null | With `changed_since` or `since_import`: whether the original was added or reworded since then. Null otherwise. |
+
+**What changed since the last release.** After a release, the translation pass only needs the
+originals that are new or reworded. `changed_since` returns the originals added or reworded since
+a date; `since_import` those added or reworded by the most recent originals import into the project
+(from the moment that import started). Each string is marked `change: "added"` or `"changed"`
+(`added` wins if both apply), and both work together with `status`, e.g. `since_import: true` with
+`status: "untranslated"` for the new or reworded originals nobody has translated yet. Pass one or
+the other, not both.
+
+GlotPress keeps an added date on originals but no modification date, so this plugin records each
+rewording itself (GlotPress meta `nakedcat_reworded_at` on the original) and each import's start and
+end (`nakedcat_last_import` on the project), through GlotPress's own import hooks. Only rewordings
+and imports since this version of the plugin was installed are known: `since_import` on a project
+with no recorded import is refused, and `changed_since` then only sees added originals.
 
 ---
 
