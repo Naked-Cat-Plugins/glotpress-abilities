@@ -1,6 +1,7 @@
 #### TBA
 
 * [NEW] Create a GlotPress project and its translation sets, either from a list of locales or copied from another project
+* [NEW] Change a GlotPress project's name, slug, description, source code link or active status, for example to retire a discontinued plugin
 
 
 #### 0.4 - 2026-09-30

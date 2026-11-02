@@ -41,6 +41,7 @@ class Abilities_Registrar {
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Add_Glossary_Entries',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Import_Originals',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Create_Project',
+		'\NakedCatPlugins\GlotpressAbilities\Abilities\Update_Project',
 	);
 
 	/**
