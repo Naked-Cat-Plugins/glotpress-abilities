@@ -44,7 +44,7 @@ class Add_Glossary_Entries {
 			self::ABILITY_NAME,
 			array(
 				'label'               => __( 'Add GlotPress glossary entries', 'nakedcat-glotpress-abilities' ),
-				'description'         => __( 'Adds one or more terms to a locale\'s global glossary, or with project_path to that project\'s own glossary (which takes precedence over the global one for that project), in a single batched call. Never overwrites an existing term\'s translation — an entry whose term and part of speech already exist with a different translation is reported as an error rather than replaced.', 'nakedcat-glotpress-abilities' ),
+				'description'         => __( 'Adds one or more terms to a locale\'s global glossary, or with project_path to that project\'s own glossary (which takes precedence over the global one for that project), in a single batched call. Never overwrites an existing term\'s translation: an entry whose term and part of speech already exist with a different translation is reported as an error rather than replaced.', 'nakedcat-glotpress-abilities' ),
 				'category'            => 'glotpress',
 				'input_schema'        => self::input_schema(),
 				'output_schema'       => self::output_schema(),
@@ -145,7 +145,7 @@ class Add_Glossary_Entries {
 					'result'         => array(
 						'type'        => 'string',
 						'enum'        => array( 'created', 'unchanged', 'error' ),
-						'description' => __( '"created" if a new glossary entry was added, "unchanged" if an identical entry (same term, part of speech, and translation) already existed, "error" if this item failed — including when the term/part-of-speech pair already exists with a DIFFERENT translation.', 'nakedcat-glotpress-abilities' ),
+						'description' => __( '"created" if a new glossary entry was added, "unchanged" if an identical entry (same term, part of speech, and translation) already existed, "error" if this item failed, including when the term/part-of-speech pair already exists with a DIFFERENT translation.', 'nakedcat-glotpress-abilities' ),
 					),
 					'entry_id'       => array(
 						'type'        => array( 'integer', 'null' ),
@@ -340,7 +340,7 @@ class Add_Glossary_Entries {
 				$part_of_speech,
 				sprintf(
 					/* translators: 1: existing translation, 2: new translation. */
-					__( 'An entry for this term and part of speech already exists with translation "%1$s" (you submitted "%2$s"). Not overwritten — update it manually if the new translation should replace it.', 'nakedcat-glotpress-abilities' ),
+					__( 'An entry for this term and part of speech already exists with translation "%1$s" (you submitted "%2$s"). Not overwritten: update it manually if the new translation should replace it.', 'nakedcat-glotpress-abilities' ),
 					$existing->translation,
 					$translation
 				)

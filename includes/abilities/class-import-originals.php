@@ -105,7 +105,7 @@ class Import_Originals {
 				),
 				'originals_updated'   => array(
 					'type'        => 'integer',
-					'description' => __( 'Number of existing originals whose comment, references, status, or priority changed and were updated in place. An original present in both the project and the submitted file with no actual differences is not counted here, or anywhere else in this output — it is simply left untouched.', 'nakedcat-glotpress-abilities' ),
+					'description' => __( 'Number of existing originals whose comment, references, status, or priority changed and were updated in place. An original present in both the project and the submitted file with no actual differences is not counted here, or anywhere else in this output: it is simply left untouched.', 'nakedcat-glotpress-abilities' ),
 				),
 				'originals_fuzzied'   => array(
 					'type'        => 'integer',

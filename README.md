@@ -22,7 +22,7 @@ is checked identically for all abilities (`includes/trait-requires-glotpress-adm
    (`GP::$permission->current_user_can('admin')`).
 
 This trusts GlotPress's own permission system alone, matching how GlotPress core's own routes
-gate translation read/write actions — it deliberately does **not** also require the WordPress
+gate translation read/write actions; it deliberately does **not** also require the WordPress
 `manage_options` capability. GlotPress's permission model exists precisely so a translation
 coordinator can administer GlotPress (and use these abilities) without needing full WordPress
 site administration rights.
@@ -45,7 +45,7 @@ Every other ability, read or write, requires GlotPress admin.
 
 ## Connecting Claude to these abilities
 
-This plugin only *registers* abilities — something has to bridge them to an actual MCP client.
+This plugin only *registers* abilities: something has to bridge them to an actual MCP client.
 The [`mcp-adapter`](https://github.com/WordPress/mcp-adapter) plugin does that: it's a separate,
 official WordPress package (part of the *AI Building Blocks for WordPress* initiative) that
 exposes every ability tagged `meta.mcp.public => true` (which all of this plugin's abilities are)
@@ -69,7 +69,7 @@ Pick one:
   ```
   then activate it (`wp plugin activate mcp-adapter`).
 - **As a Composer dependency of your own plugin** (`composer require wordpress/mcp-adapter`) if
-  you're bundling MCP support into another plugin rather than installing it standalone — see the
+  you're bundling MCP support into another plugin rather than installing it standalone; see the
   package's own README for that path; not needed just to use this plugin's abilities.
 
 Once active, confirm it sees this plugin's abilities:
@@ -83,7 +83,7 @@ wp mcp-adapter list
 Two connection methods, depending on where the site runs.
 
 **Local development sites (recommended here): STDIO via WP-CLI.** No authentication setup needed
-beyond an existing WordPress admin user with GlotPress admin permission — the command runs as
+beyond an existing WordPress admin user with GlotPress admin permission: the command runs as
 that user directly.
 
 ```bash
@@ -95,7 +95,7 @@ claude mcp add --scope project glotpress-mcp -- wp --path=/absolute/path/to/word
 for a user with GlotPress admin permission (Users → Profile → Application Passwords). The
 default server's HTTP transport is a standard authenticated REST route (`current_user_can()`
 behind the same auth WordPress's REST API always accepts), so Application Passwords work via
-plain HTTP Basic Auth — no extra proxy needed:
+plain HTTP Basic Auth, no extra proxy needed:
 
 ```bash
 AUTH=$(printf '%s:%s' 'your-username' 'xxxx xxxx xxxx xxxx xxxx xxxx' | base64)
@@ -137,12 +137,12 @@ WordPress Application Password for a user with GlotPress admin permission:
 }
 ```
 
-- `WP_API_URL` — always the default server's REST route, `/wp-json/mcp/mcp-adapter-default-server`
+- `WP_API_URL`: always the default server's REST route, `/wp-json/mcp/mcp-adapter-default-server`
   on whichever site is running `mcp-adapter`.
-- `WP_API_USERNAME` / `WP_API_PASSWORD` — a WordPress user with GlotPress admin permission, and
+- `WP_API_USERNAME` / `WP_API_PASSWORD`: a WordPress user with GlotPress admin permission, and
   that user's [Application Password](https://make.wordpress.org/core/2020/11/05/application-passwords-integration-guide/)
-  (Users → Profile → Application Passwords) — not their normal login password.
-- `LOG_FILE` — optional; where the proxy process writes its own logs, useful when debugging a
+  (Users → Profile → Application Passwords), not their normal login password.
+- `LOG_FILE`: optional; where the proxy process writes its own logs, useful when debugging a
   connection that won't come up.
 - Rename the `"glotpress-mcp"` key to whatever you'd like the server to show up as in `claude mcp
   list` / `/mcp`.
@@ -196,9 +196,9 @@ Returns GlotPress projects together with each locale's translation set and statu
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `project_path` | string | – | Limit to this project (and, if `include_sub_projects` is true, its sub-projects) by GlotPress path, e.g. `wp-plugins/my-plugin`. Omit to list all projects. |
+| `project_path` | string | none | Limit to this project (and, if `include_sub_projects` is true, its sub-projects) by GlotPress path, e.g. `wp-plugins/my-plugin`. Omit to list all projects. |
 | `include_sub_projects` | boolean | `true` | Only relevant when `project_path` is set. Whether to also include that project's sub-projects. |
-| `locale` | string | – | Limit translation sets to this GlotPress locale slug (e.g. `pt`, `pt-br`). Omit to include all locales. |
+| `locale` | string | none | Limit translation sets to this GlotPress locale slug (e.g. `pt`, `pt-br`). Omit to include all locales. |
 | `include_inactive_projects` | boolean | `false` | Whether to include inactive (disabled) GlotPress projects. |
 
 **Output**: array of project objects:
@@ -242,8 +242,8 @@ glossary when no project is given.
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
-| `project_path` | string | no | – | Scope the glossary to this project. If it has no glossary of its own, its nearest parent project's glossary is returned instead. Omit to get the locale-wide global glossary. |
+| `locale` | string | yes | none | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
+| `project_path` | string | no | none | Scope the glossary to this project. If it has no glossary of its own, its nearest parent project's glossary is returned instead. Omit to get the locale-wide global glossary. |
 | `translation_set_slug` | string | no | `default` | The translation set variant slug, e.g. `default`, `formal`. |
 
 **Output**: object:
@@ -270,7 +270,7 @@ Each `entries` item:
 | `comment` | string | An optional comment giving context or usage notes for the term. |
 
 This ability never auto-creates a glossary or translation set as a side effect (unlike some of
-GlotPress's own internal finder methods) — it is strictly read-only.
+GlotPress's own internal finder methods), so it is strictly read-only.
 
 ---
 
@@ -284,8 +284,8 @@ review already-translated strings for consistency.
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `project_path` | string | yes | – | The GlotPress project path, e.g. `wp-plugins/my-plugin`. |
-| `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
+| `project_path` | string | yes | none | The GlotPress project path, e.g. `wp-plugins/my-plugin`. |
+| `locale` | string | yes | none | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
 | `translation_set_slug` | string | no | `default` | The translation set variant slug. |
 | `status` | array of string, or string | no | `untranslated` | A list of statuses, or a single status (several joined with `_or_` work only in the combinations described below). |
 | `stale_only` | boolean | no | `false` | Return only stale waiting translations (see below). Replaces the `status` filter. |
@@ -371,15 +371,15 @@ batched call (up to 100 items). Replicates GlotPress's own submission behaviour 
 writing rows directly:
 
 - Runs GlotPress's own translation-error checks (e.g. catching an unescaped `%` in a string with
-  `sprintf`-style placeholders) before saving — items that fail are reported as errors, not saved.
+  `sprintf`-style placeholders) before saving: items that fail are reported as errors, not saved.
 - Detects an identical existing `current`/`waiting` translation and reports it as `unchanged`
   instead of creating a redundant row.
 - Creates the row, validates it (deleting it again on validation failure, matching GlotPress's own
-  route), then sets its final status — this is the step that actually fires the
+  route), then sets its final status; this is the step that actually fires the
   `gp_translation_saved` action other GlotPress integrations (e.g. `gp-convert-pt-ao90`) depend on.
 - **Refuses the whole call** if `locale` is `pt-ao90` and the project also has a `pt` translation
   set while `gp-convert-pt-ao90` is active, since that plugin auto-syncs `pt-ao90` from `pt` on
-  every save — direct writes there would just be overwritten. Submit to `pt` instead.
+  every save, so direct writes there would just be overwritten. Submit to `pt` instead.
 - **Automatically mirrors `pt` writes to `pt-ao`**, if the project has a `pt-ao` set. See below.
 
 #### Automatic `pt` → `pt-ao` mirroring
@@ -393,10 +393,10 @@ anything matched by prefix/substring) and the target project already has a `pt-a
 for the same `translation_set_slug`, every item whose `pt` write succeeds (`created` or
 `unchanged`, not `error`) is automatically written to that project's `pt-ao` set too, using the
 same `original_id`, `translation`, and `status` that were submitted for `pt`. If a project has no
-`pt-ao` set, mirroring is silently skipped for it — most projects don't have one.
+`pt-ao` set, mirroring is silently skipped for it; most projects don't have one.
 
-**The mirror always overwrites `pt-ao`, with no exceptions** — including replacing an existing
-`current` translation there — regardless of any per-call behaviour that otherwise applies to the
+**The mirror always overwrites `pt-ao`, with no exceptions**, including replacing an existing
+`current` translation there, regardless of any per-call behaviour that otherwise applies to the
 locale actually requested. This is intentional: `pt-ao` is meant to be a pure mirror of `pt`, never
 an independently-curated set.
 
@@ -408,7 +408,7 @@ Each result item's `pt_ao_mirror` field reports what happened on the `pt-ao` sid
 (non-`pt` locale, no `pt-ao` set for the project, or the item's own `pt` write did not succeed).
 
 **Don't confuse `pt-ao` (Angola) with `pt-ao90` (Portugal, post-1990-orthographic-agreement
-spelling)** — the two slugs are unrelated other than both unfortunately starting with `pt-a`.
+spelling)**: the two slugs are unrelated other than both unfortunately starting with `pt-a`.
 `pt-ao90` is handled by the separate, read-only guard described above (backed by the
 `gp-convert-pt-ao90` plugin); this mirroring logic is independent of it and does not touch
 `pt-ao90` in any way.
@@ -417,10 +417,10 @@ spelling)** — the two slugs are unrelated other than both unfortunately starti
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `project_path` | string | yes | – | The GlotPress project path. |
-| `locale` | string | yes | – | The GlotPress locale slug to submit translations for. |
+| `project_path` | string | yes | none | The GlotPress project path. |
+| `locale` | string | yes | none | The GlotPress locale slug to submit translations for. |
 | `translation_set_slug` | string | no | `default` | The translation set variant slug. |
-| `translations` | array (1-100 items) | yes | – | The translations to submit; see below. |
+| `translations` | array (1-100 items) | yes | none | The translations to submit; see below. |
 
 Each `translations` item:
 
@@ -428,7 +428,7 @@ Each `translations` item:
 |---|---|---|---|
 | `original_id` | integer | yes | The original string's ID (from `get-strings`). |
 | `translation` | array of string (min 1) | yes | The translated plural forms, one per plural form actually needed. Extra entries beyond the locale's plural count are ignored. |
-| `status` | `"current"` \| `"waiting"` \| `"fuzzy"` | yes | **No default — must be stated explicitly for every item.** `current` makes it the live, approved translation immediately (this plugin's admin-only permission model always allows this). Use `fuzzy` or `waiting` for a translation that should be flagged for human review instead. |
+| `status` | `"current"` \| `"waiting"` \| `"fuzzy"` | yes | **No default: must be stated explicitly for every item.** `current` makes it the live, approved translation immediately (this plugin's admin-only permission model always allows this). Use `fuzzy` or `waiting` for a translation that should be flagged for human review instead. |
 
 **Output**: array, one entry per input item, in order:
 
@@ -450,7 +450,7 @@ Each non-null `pt_ao_mirror` object:
 | `status` | string\|null | The `pt-ao` translation's resulting status, or null on error. |
 | `error_message` | string\|null | Why the `pt-ao` mirror write failed, or null if it did not. |
 
-One item failing does not abort the batch — only the `pt-ao90` guard rejects the whole call. A
+One item failing does not abort the batch; only the `pt-ao90` guard rejects the whole call. A
 `pt_ao_mirror` error on one item likewise does not abort the batch or affect that item's own `pt`
 result.
 
@@ -462,7 +462,7 @@ For a locale, looks up how each given source string was already translated (**ac
 translations only**) in other GlotPress projects on this site. Useful for keeping terminology
 consistent across projects before translating new strings. Matching is exact and case-sensitive
 (GlotPress's own convention for identifying "the same string"). Only strings that have at least
-one match elsewhere are included in the result — strings with no cross-project matches are
+one match elsewhere are included in the result; strings with no cross-project matches are
 omitted entirely, to keep the response proportional to actual hits rather than input size.
 
 **Input**:
@@ -508,7 +508,7 @@ parent project's glossary that `get-glossary` would fall back to.
 
 **Never overwrites an existing term.** If a submitted `(term, part_of_speech)` pair already exists
 with the *same* translation, it's reported as `unchanged`. If it already exists with a *different*
-translation, it's reported as an `error` rather than silently replacing it — this is stricter than
+translation, it's reported as an `error` rather than silently replacing it; this is stricter than
 GlotPress's own stock duplicate check (which only catches an exact term+part-of-speech+translation
 match, and would otherwise happily create a second, conflicting entry for the same term).
 
@@ -516,10 +516,10 @@ match, and would otherwise happily create a second, conflicting entry for the sa
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `locale` | string | yes | – | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
-| `project_path` | string | no | – | The project whose own glossary to add to, e.g. `wp-plugins/my-plugin`. Omit for the global glossary. |
+| `locale` | string | yes | none | The GlotPress locale slug, e.g. `pt`, `pt-br`. |
+| `project_path` | string | no | none | The project whose own glossary to add to, e.g. `wp-plugins/my-plugin`. Omit for the global glossary. |
 | `translation_set_slug` | string | no | `default` | The glossary's translation set variant slug. Almost always the default. |
-| `entries` | array (1-50 items) | yes | – | The glossary entries to add; see below. |
+| `entries` | array (1-50 items) | yes | none | The glossary entries to add; see below. |
 
 Each `entries` item:
 
@@ -612,9 +612,9 @@ page and WP-CLI's `wp glotpress import-originals` command call) rather than writ
 - New strings (by `msgid`/`msgid_plural`/`msgctxt`) are **added**.
 - Strings that already exist with the same key but a changed comment, reference, status, or
   `gp-priority:` flag are **updated** in place. A string that's unchanged is left alone entirely
-  and isn't counted anywhere in the output — GlotPress's own import doesn't track that case either.
+  and isn't counted anywhere in the output; GlotPress's own import doesn't track that case either.
 - Strings present before but missing from the new file are marked **obsolete** (not deleted; their
-  translations are preserved, but they drop out of the active string list) — *unless* a new
+  translations are preserved, but they drop out of the active string list), *unless* a new
   string is a close enough textual match (a similarity heuristic GlotPress applies internally), in
   which case it's treated as a **fuzzy** rename: the old original is updated to the new text and its
   existing current translations are marked fuzzy for re-review, instead of the rename being treated
@@ -623,7 +623,7 @@ page and WP-CLI's `wp glotpress import-originals` command call) rather than writ
   a `.po` file with real translations in it behaves identically to a `.pot` template for this
   ability's purposes.
 
-This ability is **locale-independent** — there's no `locale` or `translation_set_slug` input,
+This ability is **locale-independent**: there's no `locale` or `translation_set_slug` input,
 because originals belong to the project itself, not to any particular translation set.
 
 **Intended use: release automation.** A GitHub Actions workflow can call this over the REST API
@@ -642,7 +642,7 @@ GlotPress project's source strings stay in sync with the codebase automatically,
 ```
 
 (WordPress's own Abilities API REST route expects the ability's input nested under a top-level
-`"input"` key, as above, not as bare top-level JSON fields — this is a core REST convention, not
+`"input"` key, as above, not as bare top-level JSON fields; this is a core REST convention, not
 specific to this plugin. `jq -n --arg` handles the JSON-encoding of the `.pot` file's raw text
 safely. The Application Password user needs GlotPress admin permission, same as every other
 ability in this plugin.) An MCP client like Claude Code can call it the same way any other ability
@@ -667,7 +667,7 @@ here is called.
 | `originals_error` | integer | Number of new originals that failed to be created due to an error. |
 
 Rejects the whole call (`WP_Error`) if `project_path` doesn't resolve to a project, if
-`pot_content` is empty, or if `pot_content` can't be parsed as a valid PO/POT file — there's no
+`pot_content` is empty, or if `pot_content` can't be parsed as a valid PO/POT file; there's no
 per-item result list here, since this is a single-file operation rather than a batch of items.
 
 ---
