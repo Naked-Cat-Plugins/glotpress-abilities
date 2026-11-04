@@ -350,13 +350,28 @@ class Update_Translations {
 		$item        = is_array( $item ) ? $item : array();
 		$original_id = isset( $item['original_id'] ) ? (int) $item['original_id'] : 0;
 		$status      = isset( $item['status'] ) ? (string) $item['status'] : '';
-		$translation = isset( $item['translation'] ) && is_array( $item['translation'] ) ? array_values( $item['translation'] ) : array();
+		$translation = isset( $item['translation'] ) ? $item['translation'] : null;
+		// The Abilities API's schema check lets a string through as a list: it is the single form
+		if ( is_string( $translation ) ) {
+			$translation = array( $translation );
+		}
 
 		$original = \GP::$original->get( $original_id );
 
 		if ( ! $original || (int) $original->project_id !== (int) $project->id ) {
 			return self::error_result( $original_id, __( 'This original_id does not exist, or does not belong to the requested project.', 'nakedcat-glotpress-abilities' ) );
 		}
+
+		// GlotPress's own checks accept an empty translation, which would go live with no text
+		if (
+			! is_array( $translation )
+			|| empty( $translation )
+			|| count( array_filter( $translation, 'is_string' ) ) !== count( $translation )
+			|| '' === trim( (string) reset( $translation ) )
+		) {
+			return self::error_result( $original_id, __( 'The translation is missing or empty: send it as a list of plural forms, with the first one filled in.', 'nakedcat-glotpress-abilities' ) );
+		}
+		$translation = array_values( $translation );
 
 		// Only the locale's actual plural slots are ever read by GlotPress; ignore anything beyond that.
 		$translation = array_slice( $translation, 0, $locale->nplurals );
