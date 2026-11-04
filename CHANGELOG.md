@@ -1,3 +1,8 @@
+#### 0.5.1 - 2026-11-04
+
+* [FIX] Submitting a translation as plain text instead of a list no longer saves it empty as the current translation, and an empty translation is now refused with an error
+* [DEV] Tested up to WordPress 7.2-beta3-65031
+
 #### 0.5 - 2026-11-03
 
 * [NEW] Create a GlotPress project and its translation sets, either from a list of locales or copied from another project
