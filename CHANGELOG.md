@@ -1,8 +1,9 @@
-#### TBA
+#### 0.6 - 2026-11-16
 
 * [NEW] See GlotPress's warnings (placeholders, HTML tags, length, initial capitals) on every translation submitted or listed, list only the strings that have warnings, and count them per language
 * [NEW] Discard warnings that were checked and found to be false alarms, as GlotPress's own Discard link does
 * [FIX] Submitting as current a translation whose same text is already waiting or fuzzy now approves it, instead of leaving it waiting
+* [DEV] Tested up to WordPress 7.2-beta5-65405
 
 #### 0.5.1 - 2026-11-04
 
