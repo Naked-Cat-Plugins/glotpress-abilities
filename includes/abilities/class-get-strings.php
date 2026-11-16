@@ -33,7 +33,7 @@ class Get_Strings {
 			self::ABILITY_NAME,
 			array(
 				'label'               => __( 'Get GlotPress strings', 'nakedcat-glotpress-abilities' ),
-				'description'         => __( 'Returns a project/locale\'s strings (each original together with its current translation, if any), filtered by status and paginated. Use this to find strings that need translating, or to review already-translated strings for consistency.', 'nakedcat-glotpress-abilities' ),
+				'description'         => __( 'Returns a project/locale\'s strings (each original together with its current translation, if any), filtered by status and paginated. Use this to find strings that need translating, or to review already-translated strings for consistency. Each string lists its translation\'s GlotPress warnings, and with_warnings returns only the strings that have some.', 'nakedcat-glotpress-abilities' ),
 				'category'            => 'glotpress',
 				'input_schema'        => self::input_schema(),
 				'output_schema'       => self::output_schema(),
@@ -90,6 +90,11 @@ class Get_Strings {
 				'stale_only'           => array(
 					'type'        => 'boolean',
 					'description' => __( 'Return only stale waiting translations: waiting strings whose original was reworded by an originals import after the translation was submitted, so the translation describes text that no longer exists. Replaces the status filter (stale strings are always waiting).', 'nakedcat-glotpress-abilities' ),
+					'default'     => false,
+				),
+				'with_warnings'        => array(
+					'type'        => 'boolean',
+					'description' => __( 'Return only strings whose translation has GlotPress warnings (placeholders, HTML tags, initial capitals and so on), as the "With warnings" filter of GlotPress\'s translate screen does. Combines with status (untranslated strings have no warnings), stale_only, changed_since and since_import.', 'nakedcat-glotpress-abilities' ),
 					'default'     => false,
 				),
 				'changed_since'        => array(
@@ -173,7 +178,7 @@ class Get_Strings {
 							),
 							'translations'       => array(
 								'type'        => 'array',
-								'description' => __( 'The current translation\'s plural forms, already trimmed to the locale\'s actual plural count. Empty if untranslated.', 'nakedcat-glotpress-abilities' ),
+								'description' => __( 'The translation\'s plural forms, already trimmed to the locale\'s actual plural count. Empty if untranslated.', 'nakedcat-glotpress-abilities' ),
 								'items'       => array( 'type' => array( 'string', 'null' ) ),
 							),
 							'translation_status' => array(
@@ -202,6 +207,7 @@ class Get_Strings {
 								'enum'        => array( 'added', 'changed', null ),
 								'description' => __( 'With changed_since or since_import: "added" for an original added since then, "changed" for one reworded since then. Null otherwise.', 'nakedcat-glotpress-abilities' ),
 							),
+							'warnings'           => \NakedCatPlugins\GlotpressAbilities\Translation_Warnings::schema( __( 'GlotPress\'s warnings on this translation, empty when it has none or the string is untranslated.', 'nakedcat-glotpress-abilities' ) ),
 						),
 					),
 				),
@@ -229,6 +235,7 @@ class Get_Strings {
 		$stale_only           = ! empty( $input['stale_only'] );
 		$changed_since        = isset( $input['changed_since'] ) ? trim( (string) $input['changed_since'] ) : '';
 		$since_import         = ! empty( $input['since_import'] );
+		$warnings_filter      = ! empty( $input['with_warnings'] ) ? array( 'warnings' => 'yes' ) : array();
 
 		if ( '' !== $changed_since && $since_import ) {
 			return new \WP_Error(
@@ -315,7 +322,7 @@ class Get_Strings {
 		if ( $stale_only ) {
 			$entries = array_values(
 				array_filter(
-					self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array( 'status' => 'waiting' ) ) ),
+					self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array_merge( array( 'status' => 'waiting' ), $warnings_filter ) ) ),
 					function ( $entry ) {
 						return $entry->nakedcat_stale;
 					}
@@ -342,7 +349,7 @@ class Get_Strings {
 				);
 			}
 
-			$entries = self::with_stale_flags( self::entries_for_statuses( $project, $translation_set, $statuses ) );
+			$entries = self::with_stale_flags( self::entries_for_statuses( $project, $translation_set, $statuses, $warnings_filter ) );
 			if ( null !== $since ) {
 				$entries = self::changed_entries( $entries, $since );
 			}
@@ -368,13 +375,13 @@ class Get_Strings {
 			}
 
 			if ( null !== $since ) {
-				$entries = self::changed_entries( self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array( 'status' => $status ) ) ), $since );
+				$entries = self::changed_entries( self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array_merge( array( 'status' => $status ), $warnings_filter ) ) ), $since );
 				$total   = count( $entries );
 				$entries = array_slice( $entries, ( $page - 1 ) * $per_page, $per_page );
 			} else {
 				\GP::$translation->per_page = $per_page;
 
-				$entries = self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, $page, array( 'status' => $status ) ) );
+				$entries = self::with_stale_flags( \GP::$translation->for_translation( $project, $translation_set, $page, array_merge( array( 'status' => $status ), $warnings_filter ) ) );
 				$total   = (int) \GP::$translation->found_rows;
 			}
 		}
@@ -404,14 +411,15 @@ class Get_Strings {
 	 * @param \GP_Project         $project         The project.
 	 * @param \GP_Translation_Set $translation_set The translation set.
 	 * @param string[]            $statuses        Valid statuses, no duplicates.
+	 * @param array               $extra_filters   More GlotPress filters for every query, e.g. warnings.
 	 * @return object[] GlotPress entries.
 	 */
-	private static function entries_for_statuses( $project, $translation_set, $statuses ) {
+	private static function entries_for_statuses( $project, $translation_set, $statuses, $extra_filters = array() ) {
 		$entries = array();
 		$seen    = array();
 
 		foreach ( $statuses as $single_status ) {
-			foreach ( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array( 'status' => $single_status ) ) as $entry ) {
+			foreach ( \GP::$translation->for_translation( $project, $translation_set, 'no-limit', array_merge( array( 'status' => $single_status ), $extra_filters ) ) as $entry ) {
 				$key = $entry->original_id . '|' . ( $entry->id ? $entry->id : 0 );
 
 				if ( isset( $seen[ $key ] ) ) {
@@ -446,6 +454,7 @@ class Get_Strings {
 			'priority'           => isset( $entry->priority ) ? (int) $entry->priority : 0,
 			'stale'              => ! empty( $entry->nakedcat_stale ),
 			'change'             => isset( $entry->nakedcat_change ) ? $entry->nakedcat_change : null,
+			'warnings'           => \NakedCatPlugins\GlotpressAbilities\Translation_Warnings::to_list( $entry->id ? $entry->warnings : null ),
 		);
 	}
 

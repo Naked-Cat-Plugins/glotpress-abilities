@@ -1,5 +1,6 @@
 {
 	"plugin": "nakedcat-glotpress-abilities",
 	"activate": [ "glotpress" ],
+	"activate_if_installed": [ "gp-convert-pt-ao90" ],
 	"woocommerce": false
 }

@@ -9,7 +9,7 @@ Every ability registered by this plugin is discoverable and callable through:
 
 - WordPress core's own REST routes (`wp-abilities/v1/abilities`, list/run/categories controllers).
 - Any MCP server that bridges the Abilities API, such as the
-  [`mcp-adapter`](https://github.com/WordPress/mcp-adapter) plugin (abilities are tagged
+  [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) plugin (abilities are tagged
   `meta.mcp.public => true`, `meta.mcp.type => 'tool'`).
 
 ## Permission model
@@ -27,7 +27,7 @@ gate translation read/write actions; it deliberately does **not** also require t
 coordinator can administer GlotPress (and use these abilities) without needing full WordPress
 site administration rights.
 
-The exceptions are `create-project`, `update-project` and `review-translations`. `create-project`
+The exceptions are `create-project`, `update-project`, `review-translations` and `discard-warnings`. `create-project`
 applies the same check as GlotPress's own "New project" screen instead: GlotPress `write` permission
 on the parent project (`GP::$permission->current_user_can('write', 'project', $parent_id)`).
 GlotPress administrators always have it; other users have it when they were given `write` on that
@@ -36,41 +36,35 @@ permission), as in the UI. `update-project` applies the project edit screen's ch
 `write` on the project itself, which anyone with `write` on its parent (or the project, or any
 ancestor) has.
 
-`review-translations` applies GlotPress's own review permission instead: `approve` on every
-translation set the call touches (`GP::$permission->current_user_can('approve', 'translation-set',
-$set_id)`), so the validators of a project, locale and set can review its translations without being
-GlotPress administrators.
+`review-translations` and `discard-warnings` apply GlotPress's own review permission instead:
+`approve` on every translation set the call touches (`GP::$permission->current_user_can('approve',
+'translation-set', $set_id)`), so the validators of a project, locale and set can review its
+translations, and discard their warnings, without being GlotPress administrators.
 
 Every other ability, read or write, requires GlotPress admin.
 
 ## Connecting Claude to these abilities
 
 This plugin only *registers* abilities: something has to bridge them to an actual MCP client.
-The [`mcp-adapter`](https://github.com/WordPress/mcp-adapter) plugin does that: it's a separate,
+The [MCP Adapter](https://wordpress.org/plugins/mcp-adapter/) plugin (`mcp-adapter`) does that: it's a separate,
 official WordPress package (part of the *AI Building Blocks for WordPress* initiative) that
 exposes every ability tagged `meta.mcp.public => true` (which all of this plugin's abilities are)
 through a default MCP server via two built-in proxy tools, `discover-abilities` and
 `execute-ability`.
 
-### 1. Install and activate `mcp-adapter` on the WordPress site
+### 1. Install and activate MCP Adapter on the WordPress site
 
-WordPress 6.9+ already has the Abilities API in core, so no separate dependency is needed there.
-Pick one:
+MCP Adapter is on WordPress.org and needs WordPress 6.9 or later, which already has the Abilities
+API in core. Install it like any other plugin: Plugins → Add New, search for "MCP Adapter",
+Install Now, then Activate. Or with WP-CLI:
 
-- **As a plugin, from a release** (simplest): download the latest `mcp-adapter.zip` from the
-  [GitHub Releases page](https://github.com/WordPress/mcp-adapter/releases/latest) and install it
-  like any other WordPress plugin (Plugins → Add New → Upload Plugin, or drop the extracted folder
-  into `wp-content/plugins/`), then activate it.
-- **As a plugin, from source** (for local dev sites):
-  ```bash
-  git clone https://github.com/WordPress/mcp-adapter.git wp-content/plugins/mcp-adapter
-  cd wp-content/plugins/mcp-adapter
-  composer install
-  ```
-  then activate it (`wp plugin activate mcp-adapter`).
-- **As a Composer dependency of your own plugin** (`composer require wordpress/mcp-adapter`) if
-  you're bundling MCP support into another plugin rather than installing it standalone; see the
-  package's own README for that path; not needed just to use this plugin's abilities.
+```bash
+wp plugin install mcp-adapter --activate
+```
+
+Updates then come through the WordPress dashboard like any other plugin's. (A plugin that bundles
+MCP support itself can use the Composer package instead, `composer require wordpress/mcp-adapter`;
+that is not needed just to use this plugin's abilities.)
 
 Once active, confirm it sees this plugin's abilities:
 
@@ -138,7 +132,7 @@ WordPress Application Password for a user with GlotPress admin permission:
 ```
 
 - `WP_API_URL`: always the default server's REST route, `/wp-json/mcp/mcp-adapter-default-server`
-  on whichever site is running `mcp-adapter`.
+  on whichever site is running MCP Adapter.
 - `WP_API_USERNAME` / `WP_API_PASSWORD`: a WordPress user with GlotPress admin permission, and
   that user's [Application Password](https://make.wordpress.org/core/2020/11/05/application-passwords-integration-guide/)
   (Users → Profile → Application Passwords), not their normal login password.
@@ -154,8 +148,8 @@ claude mcp list          # should show glotpress-mcp as ✔ Connected
 ```
 
 Then, in a Claude Code session connected to this MCP server, ask it to discover abilities (it
-will call the `mcp-adapter-discover-abilities` tool) and confirm the twelve `nakedcat-glotpress/*`
-abilities listed above appear.
+will call the `mcp-adapter-discover-abilities` tool) and confirm the thirteen `nakedcat-glotpress/*`
+abilities listed below appear.
 
 ## Abilities
 
@@ -173,10 +167,12 @@ abilities listed above appear.
 | [`nakedcat-glotpress/update-glossary-entries`](#nakedcat-glotpressupdate-glossary-entries) | write | Change existing glossary entries (translation, part of speech, comment) by ID, in batch |
 | [`nakedcat-glotpress/delete-glossary-entries`](#nakedcat-glotpressdelete-glossary-entries) | write | Delete glossary entries by ID, in batch |
 | [`nakedcat-glotpress/review-translations`](#nakedcat-glotpressreview-translations) | write | Approve or reject waiting translations, in batch |
+| [`nakedcat-glotpress/discard-warnings`](#nakedcat-glotpressdiscard-warnings) | write | Discard GlotPress warnings found to be false alarms, in batch |
 
 The intended workflow for translating a project/locale: `get-strings` (find what needs work) →
 `get-glossary` and/or `find-translations-in-other-projects` (gather context/consistency
-references) → `update-translations` (submit the results) → optionally `add-glossary-entries` for
+references) → `update-translations` (submit the results, and check the `warnings` each result
+lists: fix the translation, or `discard-warnings` for a false alarm) → optionally `add-glossary-entries` for
 any new terminology worth capturing for next time, and `update-glossary-entries` or
 `delete-glossary-entries` for entries that turned out wrong or outdated.
 
@@ -190,7 +186,7 @@ plugin's project with the same translation sets as its siblings, then `import-or
 ### `nakedcat-glotpress/list-projects-translation-status`
 
 Returns GlotPress projects together with each locale's translation set and status counts
-(current, fuzzy, waiting, untranslated, percent translated).
+(current, fuzzy, waiting, untranslated, translations with warnings, percent translated).
 
 **Input** (all optional):
 
@@ -226,6 +222,7 @@ Each `translation_sets` entry:
 | `untranslated_count` | integer | Number of untranslated originals. |
 | `fuzzy_count` | integer | Number of fuzzy translations. |
 | `waiting_count` | integer | Number of translations waiting for review. |
+| `warnings_count` | integer | Number of current and waiting translations with GlotPress warnings, as the Warnings column of GlotPress's project page counts them. `get-strings` with `with_warnings` lists them. |
 | `all_count` | integer | Total number of originals in the project. |
 | `percent_translated` | integer | Percentage of originals with a current translation (0-100). |
 | `last_modified` | string\|null | Date and time the translation set was last modified, or null if never. |
@@ -278,7 +275,8 @@ GlotPress's own internal finder methods), so it is strictly read-only.
 
 Returns a project/locale's strings (each original together with its current translation, if
 any), filtered by status and paginated. Use this to find strings that need translating, or to
-review already-translated strings for consistency.
+review already-translated strings for consistency. Each string lists its translation's GlotPress
+warnings, and `with_warnings` returns only the strings that have some.
 
 **Input**:
 
@@ -289,6 +287,7 @@ review already-translated strings for consistency.
 | `translation_set_slug` | string | no | `default` | The translation set variant slug. |
 | `status` | array of string, or string | no | `untranslated` | A list of statuses, or a single status (several joined with `_or_` work only in the combinations described below). |
 | `stale_only` | boolean | no | `false` | Return only stale waiting translations (see below). Replaces the `status` filter. |
+| `with_warnings` | boolean | no | `false` | Return only strings whose translation has GlotPress warnings (see below). Combines with every other input. |
 | `changed_since` | string | no |  | Only originals added or reworded since this date, e.g. `2026-10-01` or `2026-10-01 14:30:00` (GMT unless a timezone is given). See below. |
 | `since_import` | boolean | no | `false` | Only the originals the most recent originals import into the project added or reworded. See below. |
 | `page` | integer | no | `1` | The page of results to return, starting at 1. |
@@ -330,13 +329,25 @@ Each `strings` item:
 | `singular` | string | The singular source string. |
 | `plural` | string\|null | The plural source string, or null if none. |
 | `context` | string\|null | Disambiguation string for otherwise-identical originals used in different contexts. |
-| `translations` | array of string\|null | The current translation's plural forms, trimmed to the locale's actual plural count. Empty if untranslated. |
+| `translations` | array of string\|null | The translation's plural forms, trimmed to the locale's actual plural count. Empty if untranslated. |
 | `translation_status` | string\|null | The translation's status, or null if untranslated. |
 | `extracted_comments` | string | Developer/translator context comment for this string, if any. |
 | `references` | array of string | Source locations (`file:line`) where this string is used, if known. |
 | `priority` | integer | The original's priority: `-2` hidden, `-1` low, `0` normal, `1` high. |
 | `stale` | boolean | True for a stale waiting translation (see below); always false for other statuses. |
 | `change` | `"added"` \| `"changed"` \| null | With `changed_since` or `since_import`: whether the original was added or reworded since then. Null otherwise. |
+| `warnings` | array | GlotPress's warnings on this translation, each `{ plural_index, key, message }` (see below). Empty when it has none or the string is untranslated. |
+
+**Warnings.** GlotPress checks every translation when it is saved and keeps what it finds as
+warnings: placeholders or HTML tags that differ from the original, a length very different from the
+original's, an initial capital where the original has a lowercase letter (or the other way round),
+and so on. A warning never stops a save. Each one is returned as `plural_index` (the plural form it
+is about, 0 for the singular), `key` (GlotPress's name for the check, e.g. `placeholders`, `tags`,
+`length`, `missing_uppercase_beginning`) and `message` (GlotPress's own wording).
+`with_warnings: true` returns only the strings with warnings, the same as the "With warnings" filter
+of GlotPress's translate screen (`filters[warnings]=yes`); untranslated strings never have any. A
+warning checked and found to be a false alarm (a German noun capitalised where the English original
+starts in lowercase, for example) is removed with `discard-warnings`.
 
 **Stale waiting translations.** When originals are re-imported after their English wording
 changed, GlotPress rewrites a reworded original in place (`originals_fuzzied` in
@@ -372,8 +383,18 @@ writing rows directly:
 
 - Runs GlotPress's own translation-error checks (e.g. catching an unescaped `%` in a string with
   `sprintf`-style placeholders) before saving: items that fail are reported as errors, not saved.
-- Detects an identical existing `current`/`waiting` translation and reports it as `unchanged`
-  instead of creating a redundant row.
+- Detects an identical existing `current`, `waiting` or `fuzzy` translation instead of creating a
+  redundant row. Submitted as `current`, an identical `waiting` or `fuzzy` translation is
+  **approved** in place (result `approved`), through `GP_Translation::set_status()` as GlotPress's
+  own Approve button does, so the previous `current` translation becomes `old` and
+  `gp_translation_saved` fires (`gp-convert-pt-ao90`, the `pt-ao` mirror below and any other
+  integration run as for a new translation). **An identical translation is never demoted**: the same
+  text at its own status or a lower one (`current` above `waiting` above `fuzzy`) is reported as
+  `unchanged`. The one exception to reusing the identical row: the same text as a `fuzzy`
+  translation, submitted as `waiting`, is saved as a new `waiting` row, as before.
+- Returns the GlotPress **warnings** of every translation it saves, approves or leaves unchanged (see
+  `get-strings` for what they are), so they can be fixed, or discarded with `discard-warnings` when
+  they are false alarms.
 - Creates the row, validates it (deleting it again on validation failure, matching GlotPress's own
   route), then sets its final status; this is the step that actually fires the
   `gp_translation_saved` action other GlotPress integrations (e.g. `gp-convert-pt-ao90`) depend on.
@@ -390,8 +411,8 @@ read identical to Portugal's, so there is no dialectal content worth maintaining
 
 Whenever a call's `locale` is **exactly** `pt` (never `pt-ao` itself, `pt-ao90`, `pt-br`, or
 anything matched by prefix/substring) and the target project already has a `pt-ao` translation set
-for the same `translation_set_slug`, every item whose `pt` write succeeds (`created` or
-`unchanged`, not `error`) is automatically written to that project's `pt-ao` set too, using the
+for the same `translation_set_slug`, every item whose `pt` write succeeds (`created`, `approved`
+or `unchanged`, not `error`) is automatically written to that project's `pt-ao` set too, using the
 same `original_id`, `translation`, and `status` that were submitted for `pt`. If a project has no
 `pt-ao` set, mirroring is silently skipped for it; most projects don't have one.
 
@@ -428,16 +449,17 @@ Each `translations` item:
 |---|---|---|---|
 | `original_id` | integer | yes | The original string's ID (from `get-strings`). |
 | `translation` | array of string (min 1) | yes | The translated plural forms, one per plural form actually needed. Extra entries beyond the locale's plural count are ignored. |
-| `status` | `"current"` \| `"waiting"` \| `"fuzzy"` | yes | **No default: must be stated explicitly for every item.** `current` makes it the live, approved translation immediately (this plugin's admin-only permission model always allows this). Use `fuzzy` or `waiting` for a translation that should be flagged for human review instead. |
+| `status` | `"current"` \| `"waiting"` \| `"fuzzy"` | yes | **No default: must be stated explicitly for every item.** `current` makes it the live, approved translation immediately (this plugin's admin-only permission model always allows this), and approves an identical translation already `waiting` or `fuzzy`. Use `fuzzy` or `waiting` for a translation that should be flagged for human review instead. |
 
 **Output**: array, one entry per input item, in order:
 
 | Field | Type | Description |
 |---|---|---|
 | `original_id` | integer | The original this result is for. |
-| `result` | `"created"` \| `"unchanged"` \| `"error"` | What happened. |
-| `translation_id` | integer\|null | The resulting (or pre-existing, for `unchanged`) translation row ID, or null on error. |
+| `result` | `"created"` \| `"approved"` \| `"unchanged"` \| `"error"` | What happened: `created` for a new translation row, `approved` when an identical `waiting` or `fuzzy` translation was made `current`, `unchanged` when an identical translation already had this status or a higher one, `error` when the item failed. |
+| `translation_id` | integer\|null | The resulting (or pre-existing, for `approved` and `unchanged`) translation row ID, or null on error. |
 | `status` | string\|null | The translation's resulting status, or null on error. |
+| `warnings` | array | GlotPress's warnings on the resulting translation, each `{ plural_index, key, message }`. Empty when there are none, and on error. |
 | `error_message` | string\|null | Why this item failed, or null if it did not. |
 | `pt_ao_mirror` | object\|null | The `pt` → `pt-ao` mirror outcome for this item; see below. Null if no mirroring was attempted. |
 
@@ -445,8 +467,8 @@ Each non-null `pt_ao_mirror` object:
 
 | Field | Type | Description |
 |---|---|---|
-| `result` | `"created"` \| `"unchanged"` \| `"error"` | Same meaning as the outer `result`, but for the `pt-ao` mirror write. |
-| `translation_id` | integer\|null | The resulting (or pre-existing, for `unchanged`) `pt-ao` translation row ID, or null on error. |
+| `result` | `"created"` \| `"approved"` \| `"unchanged"` \| `"error"` | Same meaning as the outer `result`, but for the `pt-ao` mirror write. |
+| `translation_id` | integer\|null | The resulting (or pre-existing, for `approved` and `unchanged`) `pt-ao` translation row ID, or null on error. |
 | `status` | string\|null | The `pt-ao` translation's resulting status, or null on error. |
 | `error_message` | string\|null | Why the `pt-ao` mirror write failed, or null if it did not. |
 
@@ -696,29 +718,6 @@ sets, the project is deleted again, so a failed call never leaves a half-created
 
 **Permission**: GlotPress `write` on the parent project, the same check as GlotPress's "New project"
 screen (see [Permission model](#permission-model)), not GlotPress admin.
-### `nakedcat-glotpress/review-translations`
-
-Approves or rejects **waiting** translations in batch (up to 100 reviews), the way translations are
-reviewed after a release. Each review goes through `GP_Translation::set_status()`, the same call
-as the approve and reject buttons of GlotPress's translate screen: approving makes the translation
-current and demotes that original's previous current, waiting, fuzzy and changes-requested
-translations in the set to `old`, exactly as in the UI.
-
-A review names its translation either by `translation_id` (as `get-strings` returns it), or by
-`original_id` together with the top-level `project_path` and `locale`, which picks that original's
-waiting translation in the set (refused when the original has several waiting translations, with
-their IDs in the error).
-
-**Only waiting translations are reviewed.** A translation in any other status (fuzzy, old,
-current, rejected) is reported as an `error` and left untouched, so an old or fuzzy translation is
-never approved by mistake.
-
-**Rejection reason**: GlotPress core has no review feedback channel, so a `reason` given with a
-rejection is kept as GlotPress meta on the translation (`nakedcat_rejection_reason`) and returned
-in the result.
-
-**Permission**: GlotPress `approve` on every translation set the call touches (see
-[Permission model](#permission-model)), not GlotPress admin.
 
 **Input**:
 
@@ -776,6 +775,42 @@ like the edit screen, so GlotPress's hooks run.
 `previous_path`, `name`, `slug`, `description`, `source_url_template`, `active`, and
 `changed_fields` (the fields this call actually changed; empty if everything already had the values
 submitted).
+
+---
+
+### `nakedcat-glotpress/review-translations`
+
+Approves or rejects **waiting** translations in batch (up to 100 reviews), the way translations are
+reviewed after a release. Each review goes through `GP_Translation::set_status()`, the same call
+as the approve and reject buttons of GlotPress's translate screen: approving makes the translation
+current and demotes that original's previous current, waiting, fuzzy and changes-requested
+translations in the set to `old`, exactly as in the UI.
+
+A review names its translation either by `translation_id` (as `get-strings` returns it), or by
+`original_id` together with the top-level `project_path` and `locale`, which picks that original's
+waiting translation in the set (refused when the original has several waiting translations, with
+their IDs in the error).
+
+To approve everything waiting in a set, list it with `get-strings` (`status: "waiting"`, and
+`stale_only` first to catch the ones whose original was reworded since) and pass the
+`original_id`s here, 100 per call. `update-translations` also approves: the same text submitted
+again as `current` approves an identical `waiting` or `fuzzy` translation (result `approved`).
+
+**Only waiting translations are reviewed.** A translation in any other status (fuzzy, old,
+current, rejected) is reported as an `error` and left untouched, so an old or fuzzy translation is
+never approved by mistake.
+
+**Rejection reason**: GlotPress core has no review feedback channel, so a `reason` given with a
+rejection is kept as GlotPress meta on the translation (`nakedcat_rejection_reason`) and returned
+in the result.
+
+**Permission**: GlotPress `approve` on every translation set the call touches (see
+[Permission model](#permission-model)), not GlotPress admin.
+
+**Input**:
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
 | `project_path` | string | for `original_id` reviews |  | The project, e.g. `wp-plugins/my-plugin`. |
 | `locale` | string | for `original_id` reviews |  | The locale slug, e.g. `pt`. |
 | `translation_set_slug` | string | no | `default` | The translation set variant slug, for `original_id` reviews. |
@@ -791,3 +826,37 @@ submitted).
 | `status` | string\|null | The translation's status after the call. |
 | `reason` | string\|null | The rejection reason kept with the translation, or null. |
 | `error_message` | string\|null | Why this review failed, or null if it did not. |
+
+---
+
+### `nakedcat-glotpress/discard-warnings`
+
+Discards GlotPress warnings that were checked and found to be false alarms, in batch (up to 100),
+as the "Discard" link next to a warning on GlotPress's translate screen does: it fires
+`gp_warning_discarded`, removes the warning and saves the translation with `GP_Translation::save()`,
+so `gp_translation_saved` fires too. The translation's text and status are never changed. A
+discarded warning comes back only if the translation is saved again with new text.
+
+Each item names the translation and the warning `key`, as `get-strings` and `update-translations`
+return them. Without `plural_index`, the key is discarded on every plural form of the translation
+that has it. A translation that does not exist, or does not have that warning, is reported as an
+`error` and nothing is changed for that item.
+
+**Permission**: GlotPress `approve` on every translation set the call touches, as for
+`review-translations` (see [Permission model](#permission-model)), not GlotPress admin.
+
+**Input**:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `warnings` | array (1-100 items) | yes | Each with `translation_id` (integer, required), `key` (string, required, e.g. `missing_uppercase_beginning`) and an optional `plural_index` (integer, 0 for the singular). |
+
+**Output**: array, one entry per item, in order:
+
+| Field | Type | Description |
+|---|---|---|
+| `translation_id` | integer | The translation this result is for. |
+| `key` | string | The warning key this result is for. |
+| `result` | `"discarded"` \| `"error"` | What happened. |
+| `warnings` | array | The warnings the translation still has after this item, each `{ plural_index, key, message }`. Empty if none, or if the translation was not found. |
+| `error_message` | string\|null | Why this item failed, or null if it did not. |

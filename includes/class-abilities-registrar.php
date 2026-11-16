@@ -45,6 +45,7 @@ class Abilities_Registrar {
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Update_Glossary_Entries',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Delete_Glossary_Entries',
 		'\NakedCatPlugins\GlotpressAbilities\Abilities\Review_Translations',
+		'\NakedCatPlugins\GlotpressAbilities\Abilities\Discard_Warnings',
 	);
 
 	/**
@@ -67,6 +68,7 @@ class Abilities_Registrar {
 		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/trait-requires-glotpress-admin.php';
 		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/trait-resolves-existing-glossary.php';
 		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/class-original-history.php';
+		require_once NAKEDCAT_GLOTPRESS_ABILITIES_PLUGIN_DIR . 'includes/class-translation-warnings.php';
 
 		Original_History::register_hooks();
 

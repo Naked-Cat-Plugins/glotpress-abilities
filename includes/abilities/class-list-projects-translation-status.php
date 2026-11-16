@@ -29,7 +29,7 @@ class List_Projects_Translation_Status {
 			self::ABILITY_NAME,
 			array(
 				'label'               => __( 'List GlotPress projects, locales & translation status', 'nakedcat-glotpress-abilities' ),
-				'description'         => __( 'Returns GlotPress projects together with each locale\'s translation set and status counts (current, fuzzy, waiting, untranslated, percent translated).', 'nakedcat-glotpress-abilities' ),
+				'description'         => __( 'Returns GlotPress projects together with each locale\'s translation set and status counts (current, fuzzy, waiting, untranslated, translations with warnings, percent translated).', 'nakedcat-glotpress-abilities' ),
 				'category'            => 'glotpress',
 				'input_schema'        => self::input_schema(),
 				'output_schema'       => self::output_schema(),
@@ -161,6 +161,10 @@ class List_Projects_Translation_Status {
 									'type'        => 'integer',
 									'description' => __( 'Number of translations waiting for review.', 'nakedcat-glotpress-abilities' ),
 								),
+								'warnings_count'       => array(
+									'type'        => 'integer',
+									'description' => __( 'Number of current and waiting translations with GlotPress warnings, as the Warnings column of GlotPress\'s project page counts them. get-strings with with_warnings lists them.', 'nakedcat-glotpress-abilities' ),
+								),
 								'all_count'            => array(
 									'type'        => 'integer',
 									'description' => __( 'Total number of originals in the project.', 'nakedcat-glotpress-abilities' ),
@@ -278,6 +282,7 @@ class List_Projects_Translation_Status {
 				'untranslated_count'   => (int) $set->untranslated_count(),
 				'fuzzy_count'          => (int) $set->fuzzy_count(),
 				'waiting_count'        => (int) $set->waiting_count(),
+				'warnings_count'       => (int) $set->warnings_count(),
 				'all_count'            => (int) $set->all_count(),
 				'percent_translated'   => (int) $set->percent_translated(),
 				'last_modified'        => $last_modified ? $last_modified : null,

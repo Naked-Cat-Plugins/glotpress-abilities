@@ -20,6 +20,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * since only set_status() (via save()) fires the gp_translation_saved action that integrations
  * like gp-convert-pt-ao90 depend on.
  *
+ * An identical translation already waiting or fuzzy, submitted again as "current", is approved in
+ * place through set_status(), as GlotPress's own approve button does, instead of being reported as
+ * unchanged. An identical translation is never demoted.
+ *
  * Also auto-mirrors successful "pt" writes to a project's "pt-ao" (Portuguese, Angola) set, if
  * one exists, since Angola's Portuguese is meant to always match Portugal's for these plugins.
  * This is unrelated to the "pt-ao90" guard above other than the unfortunate slug similarity: see
@@ -34,6 +38,15 @@ class Update_Translations {
 	const MAX_ITEMS_PER_CALL = 100;
 
 	/**
+	 * How far each status is along the review path: a submission never moves a translation down it.
+	 */
+	const STATUS_RANK = array(
+		'fuzzy'   => 0,
+		'waiting' => 1,
+		'current' => 2,
+	);
+
+	/**
 	 * Registers the ability with the Abilities API.
 	 */
 	public static function register() {
@@ -41,7 +54,7 @@ class Update_Translations {
 			self::ABILITY_NAME,
 			array(
 				'label'               => __( 'Update GlotPress translations', 'nakedcat-glotpress-abilities' ),
-				'description'         => __( 'Creates or updates translations for one or more originals in a project/locale, in a single batched call. Replicates GlotPress\'s own submission behaviour (validation, duplicate detection, and firing the same hooks other integrations rely on) rather than writing rows directly. When locale is exactly "pt" and the project also has a "pt-ao" (Portuguese, Angola) translation set, every successfully-written item is automatically mirrored to "pt-ao" too, unconditionally overwriting whatever is there (including an existing "current" translation), since Angola\'s Portuguese is meant to always match Portugal\'s. See each result\'s "pt_ao_mirror" field. This is unrelated to "pt-ao90" (pre/post-1990-orthographic-agreement Portugal spelling), handled separately below.', 'nakedcat-glotpress-abilities' ),
+				'description'         => __( 'Creates or updates translations for one or more originals in a project/locale, in a single batched call. Replicates GlotPress\'s own submission behaviour (validation, duplicate detection, and firing the same hooks other integrations rely on) rather than writing rows directly. Submitting as "current" a translation identical to one already waiting or fuzzy approves that one (result "approved"); an identical translation is never demoted. Each result lists the GlotPress warnings of the translation (placeholders, HTML tags, initial capitals and so on), to fix the translation or discard a false alarm with discard-warnings. When locale is exactly "pt" and the project also has a "pt-ao" (Portuguese, Angola) translation set, every successfully-written item is automatically mirrored to "pt-ao" too, unconditionally overwriting whatever is there (including an existing "current" translation), since Angola\'s Portuguese is meant to always match Portugal\'s. See each result\'s "pt_ao_mirror" field. This is unrelated to "pt-ao90" (pre/post-1990-orthographic-agreement Portugal spelling), handled separately below.', 'nakedcat-glotpress-abilities' ),
 				'category'            => 'glotpress',
 				'input_schema'        => self::input_schema(),
 				'output_schema'       => self::output_schema(),
@@ -105,7 +118,7 @@ class Update_Translations {
 							),
 							'status'      => array(
 								'type'        => 'string',
-								'description' => __( 'The status to submit this translation with. "current" makes it the live, approved translation immediately (this plugin\'s GlotPress-admin permission model always allows this). Use "fuzzy" or "waiting" instead for a translation that should be flagged for human review rather than going live immediately.', 'nakedcat-glotpress-abilities' ),
+								'description' => __( 'The status to submit this translation with. "current" makes it the live, approved translation immediately (this plugin\'s GlotPress-admin permission model always allows this), and approves an identical translation already waiting or fuzzy. Use "fuzzy" or "waiting" instead for a translation that should be flagged for human review rather than going live immediately.', 'nakedcat-glotpress-abilities' ),
 								'enum'        => array( 'current', 'waiting', 'fuzzy' ),
 							),
 						),
@@ -135,17 +148,18 @@ class Update_Translations {
 					),
 					'result'         => array(
 						'type'        => 'string',
-						'enum'        => array( 'created', 'unchanged', 'error' ),
-						'description' => __( '"created" if a new translation row was written, "unchanged" if an identical current/waiting translation already existed, "error" if this item failed.', 'nakedcat-glotpress-abilities' ),
+						'enum'        => array( 'created', 'approved', 'unchanged', 'error' ),
+						'description' => __( '"created" if a new translation row was written, "approved" if an identical waiting or fuzzy translation was made current, "unchanged" if an identical translation already had this status or a higher one (current above waiting above fuzzy), "error" if this item failed.', 'nakedcat-glotpress-abilities' ),
 					),
 					'translation_id' => array(
 						'type'        => array( 'integer', 'null' ),
-						'description' => __( 'The resulting (or pre-existing, for "unchanged") translation row ID, or null on error.', 'nakedcat-glotpress-abilities' ),
+						'description' => __( 'The resulting (or pre-existing, for "approved" and "unchanged") translation row ID, or null on error.', 'nakedcat-glotpress-abilities' ),
 					),
 					'status'         => array(
 						'type'        => array( 'string', 'null' ),
 						'description' => __( 'The translation\'s resulting status, or null on error.', 'nakedcat-glotpress-abilities' ),
 					),
+					'warnings'       => \NakedCatPlugins\GlotpressAbilities\Translation_Warnings::schema( __( 'GlotPress\'s warnings on the resulting translation (empty when there are none, and on error). A warning does not stop the save: check each one, fix the translation, or discard a false alarm with discard-warnings.', 'nakedcat-glotpress-abilities' ) ),
 					'error_message'  => array(
 						'type'        => array( 'string', 'null' ),
 						'description' => __( 'Why this item failed, or null if it did not.', 'nakedcat-glotpress-abilities' ),
@@ -156,12 +170,12 @@ class Update_Translations {
 						'properties'  => array(
 							'result'         => array(
 								'type'        => 'string',
-								'enum'        => array( 'created', 'unchanged', 'error' ),
+								'enum'        => array( 'created', 'approved', 'unchanged', 'error' ),
 								'description' => __( 'Same meaning as the outer "result", but for the "pt-ao" mirror write.', 'nakedcat-glotpress-abilities' ),
 							),
 							'translation_id' => array(
 								'type'        => array( 'integer', 'null' ),
-								'description' => __( 'The resulting (or pre-existing, for "unchanged") "pt-ao" translation row ID, or null on error.', 'nakedcat-glotpress-abilities' ),
+								'description' => __( 'The resulting (or pre-existing, for "approved" and "unchanged") "pt-ao" translation row ID, or null on error.', 'nakedcat-glotpress-abilities' ),
 							),
 							'status'         => array(
 								'type'        => array( 'string', 'null' ),
@@ -175,7 +189,7 @@ class Update_Translations {
 						'required'    => array( 'result', 'translation_id', 'status', 'error_message' ),
 					),
 				),
-				'required'   => array( 'original_id', 'result', 'translation_id', 'status', 'error_message', 'pt_ao_mirror' ),
+				'required'   => array( 'original_id', 'result', 'translation_id', 'status', 'warnings', 'error_message', 'pt_ao_mirror' ),
 			),
 		);
 	}
@@ -388,18 +402,30 @@ class Update_Translations {
 			return self::error_result( $original_id, implode( ' ', array_unique( $messages ) ) );
 		}
 
-		$existing = self::find_existing_current_or_waiting( $project, $translation_set, $original_id );
+		$identical = self::find_identical( $project, $translation_set, $original_id, array_pad( $translation, $locale->nplurals, null ) );
 
-		foreach ( $existing as $entry ) {
-			if ( array_pad( $translation, $locale->nplurals, null ) === $entry->translations ) {
-				return array(
-					'original_id'    => $original_id,
-					'result'         => 'unchanged',
-					'translation_id' => $entry->id ? (int) $entry->id : null,
-					'status'         => $entry->translation_status,
-					'error_message'  => null,
-				);
+		if ( $identical ) {
+			$identical_rank = self::STATUS_RANK[ $identical->translation_status ];
+			$requested_rank = isset( self::STATUS_RANK[ $status ] ) ? self::STATUS_RANK[ $status ] : 0;
+
+			// Never demote: the same text asked at its own status or a lower one changes nothing
+			if ( $requested_rank <= $identical_rank ) {
+				return self::success_result( $original_id, 'unchanged', (int) $identical->id, $identical->translation_status, $identical->warnings );
 			}
+
+			// The same text already waiting or fuzzy, asked as current: approve it as the admin's
+			// button does, through set_status(), so gp_translation_saved fires
+			if ( 'current' === $status ) {
+				$existing_translation = \GP::$translation->get( (int) $identical->id );
+
+				if ( ! $existing_translation || ! $existing_translation->set_status( 'current' ) ) {
+					return self::error_result( $original_id, __( 'An identical translation is already waiting or fuzzy, but GlotPress refused to approve it.', 'nakedcat-glotpress-abilities' ) );
+				}
+
+				return self::success_result( $original_id, 'approved', (int) $existing_translation->id, 'current', $existing_translation->warnings );
+			}
+
+			// The same text fuzzy, asked as waiting: submitted as a new waiting row, as before
 		}
 
 		$data = array(
@@ -431,32 +457,63 @@ class Update_Translations {
 			return self::error_result( $original_id, __( 'The translation was saved but its status could not be set.', 'nakedcat-glotpress-abilities' ) );
 		}
 
-		return array(
-			'original_id'    => $original_id,
-			'result'         => 'created',
-			'translation_id' => (int) $new_translation->id,
-			'status'         => $status,
-			'error_message'  => null,
-		);
+		return self::success_result( $original_id, 'created', (int) $new_translation->id, $status, $data['warnings'] );
 	}
 
 	/**
-	 * Finds existing current/waiting translations for an original, for duplicate detection.
+	 * Finds the original's current, waiting or fuzzy translation with exactly this text, for
+	 * duplicate detection. When several have it, the highest status wins (current, then waiting,
+	 * then fuzzy).
 	 *
 	 * @param \GP_Project         $project         The resolved project.
 	 * @param \GP_Translation_Set $translation_set The resolved translation set.
 	 * @param int                 $original_id     The original's ID.
-	 * @return \Translation_Entry[]
+	 * @param array               $translation     The plural forms, padded to the locale's count.
+	 * @return \Translation_Entry|null
 	 */
-	private static function find_existing_current_or_waiting( $project, $translation_set, $original_id ) {
-		return \GP::$translation->for_translation(
+	private static function find_identical( $project, $translation_set, $original_id, $translation ) {
+		$entries = \GP::$translation->for_translation(
 			$project,
 			$translation_set,
 			'no-limit',
 			array(
 				'original_id' => $original_id,
-				'status'      => 'current_or_waiting',
+				'status'      => 'current_or_waiting_or_fuzzy',
 			)
+		);
+
+		$identical = null;
+
+		foreach ( $entries as $entry ) {
+			if ( ! $entry->id || ! isset( self::STATUS_RANK[ $entry->translation_status ] ) || $translation !== $entry->translations ) {
+				continue;
+			}
+			if ( ! $identical || self::STATUS_RANK[ $entry->translation_status ] > self::STATUS_RANK[ $identical->translation_status ] ) {
+				$identical = $entry;
+			}
+		}
+
+		return $identical;
+	}
+
+	/**
+	 * Builds a per-item success result.
+	 *
+	 * @param int    $original_id    The original's ID.
+	 * @param string $result         "created", "approved" or "unchanged".
+	 * @param int    $translation_id The translation row ID.
+	 * @param string $status         The translation's status.
+	 * @param mixed  $warnings       Its warnings, as GlotPress stores them.
+	 * @return array<string, mixed>
+	 */
+	private static function success_result( $original_id, $result, $translation_id, $status, $warnings ) {
+		return array(
+			'original_id'    => $original_id,
+			'result'         => $result,
+			'translation_id' => $translation_id,
+			'status'         => $status,
+			'warnings'       => \NakedCatPlugins\GlotpressAbilities\Translation_Warnings::to_list( $warnings ),
+			'error_message'  => null,
 		);
 	}
 
@@ -473,6 +530,7 @@ class Update_Translations {
 			'result'         => 'error',
 			'translation_id' => null,
 			'status'         => null,
+			'warnings'       => array(),
 			'error_message'  => $error_message,
 		);
 	}
